@@ -1,612 +1,818 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CityMap from "./CityMap";
 import "./App.css";
 
 const API = "http://127.0.0.1:8000";
 
-const FALLBACK_ROADS = [
-  {
-    road_id: "R1",
-    start: "J1",
-    end: "J2",
-    traffic: 30,
-    distance_km: 2,
-    speed_kmph: 40,
-  },
-  {
-    road_id: "R2",
-    start: "J1",
-    end: "J3",
-    traffic: 70,
-    distance_km: 3,
-    speed_kmph: 20,
-  },
-  {
-    road_id: "R3",
-    start: "J2",
-    end: "J3",
-    traffic: 80,
-    distance_km: 2,
-    speed_kmph: 15,
-  },
-  {
-    road_id: "R4",
-    start: "J2",
-    end: "J4",
-    traffic: 20,
-    distance_km: 2.5,
-    speed_kmph: 45,
-  },
-  {
-    road_id: "R5",
-    start: "J3",
-    end: "J5",
-    traffic: 25,
-    distance_km: 3,
-    speed_kmph: 40,
-  },
-  {
-    road_id: "R6",
-    start: "J4",
-    end: "J5",
-    traffic: 35,
-    distance_km: 1.8,
-    speed_kmph: 35,
-  },
-];
+const START_NODE = "J1";
+const DESTINATION_NODE = "J5";
 
-const FALLBACK_ROUTE = ["J1", "J2", "J4", "J5"];
+// Simulation multiplier.
+// Higher = faster ambulance simulation.
+const SIMULATION_SPEED = 35;
+
+// How often we ask backend for a fresh route while traffic changes.
+const ROUTE_DEBOUNCE_MS = 350;
+
+function normalizeRoute(data) {
+  const possibleRoutes = [
+    data?.emergency_route,
+    data?.route,
+    data?.path,
+    data?.nodes,
+  ];
+
+  const found = possibleRoutes.find(
+    (value) => Array.isArray(value) && value.length >= 2
+  );
+
+  if (!found) {
+    return [];
+  }
+
+  return found.map(String);
+}
+
+function findRoad(roads, from, to) {
+  return (
+    roads.find(
+      (road) =>
+        (road.start === from && road.end === to) ||
+        (road.start === to && road.end === from)
+    ) || null
+  );
+}
+
+/*
+  Local traffic-aware fallback.
+
+  This is important:
+  Even if the backend route response does not immediately change,
+  the frontend can still calculate a traffic-aware route from the
+  current road data.
+
+  Weight = estimated travel time.
+*/
+function calculateLocalRoute(roads, start, destination) {
+  if (!start || !destination) {
+    return [];
+  }
+
+  if (start === destination) {
+    return [start];
+  }
+
+  const graph = {};
+
+  roads.forEach((road) => {
+    if (!graph[road.start]) graph[road.start] = [];
+    if (!graph[road.end]) graph[road.end] = [];
+
+    const traffic = Math.max(
+      0,
+      Math.min(100, Number(road.traffic) || 0)
+    );
+
+    const distance = Math.max(
+      0.1,
+      Number(road.distance_km) || 1
+    );
+
+    const baseSpeed = Math.max(
+      5,
+      Number(road.speed_kmph) || 30
+    );
+
+    /*
+      Congestion reduces effective speed.
+
+      0% traffic  -> 100% speed
+      50% traffic -> ~67.5% speed
+      100%        -> ~35% speed
+    */
+    const congestionFactor = Math.max(
+      0.35,
+      1 - (0.65 * traffic) / 100
+    );
+
+    const effectiveSpeed = Math.max(
+      5,
+      baseSpeed * congestionFactor
+    );
+
+    const travelTime =
+      distance / effectiveSpeed;
+
+    graph[road.start].push({
+      node: road.end,
+      weight: travelTime,
+    });
+
+    graph[road.end].push({
+      node: road.start,
+      weight: travelTime,
+    });
+  });
+
+  const distances = {};
+  const previous = {};
+  const unvisited = new Set(Object.keys(graph));
+
+  Object.keys(graph).forEach((node) => {
+    distances[node] = Infinity;
+    previous[node] = null;
+  });
+
+  if (!distances[start]) {
+    distances[start] = 0;
+    unvisited.add(start);
+  }
+
+  distances[start] = 0;
+
+  while (unvisited.size > 0) {
+    let current = null;
+    let bestDistance = Infinity;
+
+    for (const node of unvisited) {
+      if (distances[node] < bestDistance) {
+        bestDistance = distances[node];
+        current = node;
+      }
+    }
+
+    if (!current) {
+      break;
+    }
+
+    unvisited.delete(current);
+
+    if (current === destination) {
+      break;
+    }
+
+    const neighbors = graph[current] || [];
+
+    for (const neighbor of neighbors) {
+      const candidate =
+        distances[current] + neighbor.weight;
+
+      if (candidate < (distances[neighbor.node] ?? Infinity)) {
+        distances[neighbor.node] = candidate;
+        previous[neighbor.node] = current;
+      }
+    }
+  }
+
+  if (
+    destination !== start &&
+    previous[destination] === null
+  ) {
+    return [];
+  }
+
+  const result = [];
+  let current = destination;
+
+  while (current) {
+    result.unshift(current);
+
+    if (current === start) {
+      break;
+    }
+
+    current = previous[current];
+  }
+
+  if (result[0] !== start) {
+    return [];
+  }
+
+  return result;
+}
 
 function App() {
-  const [route, setRoute] = useState(FALLBACK_ROUTE);
-  const [trafficData, setTrafficData] =
-    useState(FALLBACK_ROADS);
+  const [roads, setRoads] = useState([]);
+  const [route, setRoute] = useState([]);
 
-  const [ambulanceProgress, setAmbulanceProgress] =
-    useState(0);
+  /*
+    progress is segment based.
 
-  const [journeyStarted, setJourneyStarted] =
-    useState(false);
+    Example:
+      0.0 = J1
+      0.5 = halfway J1 -> J2
+      1.0 = J2
+      1.5 = halfway J2 -> J4
+      2.0 = J4
+      3.0 = J5
+  */
+  const [progress, setProgress] = useState(0);
 
-  const [completed, setCompleted] =
-    useState(false);
+  const [moving, setMoving] = useState(false);
+  const [completed, setCompleted] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [rerouting, setRerouting] = useState(false);
+  const [error, setError] = useState("");
 
-  const [loading, setLoading] =
-    useState(true);
+  /*
+    If traffic changes while ambulance is between two junctions,
+    we DON'T teleport it to another road.
 
-  const [error, setError] =
-    useState("");
-
-  // --------------------------------------------------
-  // IMPORTANT REFS
-  // --------------------------------------------------
-
-  const routeRef = useRef(FALLBACK_ROUTE);
-  const roadsRef = useRef(FALLBACK_ROADS);
-
-  const progressRef = useRef(0);
+    We store the new route and apply it when the ambulance reaches
+    the next junction.
+  */
+  const pendingRouteRef = useRef(null);
 
   const animationRef = useRef(null);
   const lastFrameRef = useRef(null);
 
-  // --------------------------------------------------
-  // LOAD CITY
-  // --------------------------------------------------
+  const trafficTimerRef = useRef(null);
+  const routeRequestIdRef = useRef(0);
 
-  const fetchTraffic = useCallback(async () => {
+  /*
+    Used to avoid unnecessary duplicate route requests.
+  */
+  const lastRouteStartRef = useRef(START_NODE);
+
+  const loadCity = useCallback(async () => {
     try {
-      const response =
-        await fetch(`${API}/city`);
+      const response = await fetch(`${API}/city`, {
+        cache: "no-store",
+      });
 
       if (!response.ok) {
-        throw new Error("City API failed");
+        throw new Error(`City API error: ${response.status}`);
       }
 
-      const data =
-        await response.json();
+      const data = await response.json();
 
-      if (
-        Array.isArray(data.roads) &&
-        data.roads.length > 0
-      ) {
-        roadsRef.current =
-          data.roads;
+      const incomingRoads =
+        Array.isArray(data?.roads)
+          ? data.roads
+          : [];
 
-        setTrafficData(
-          data.roads
-        );
-      }
+      setRoads(incomingRoads);
+      setError("");
+
+      return incomingRoads;
     } catch (err) {
-      console.error(
-        "Traffic loading error:",
-        err
-      );
+      console.error("City error:", err);
+      setError("Unable to load city traffic.");
+      return [];
     }
   }, []);
 
-  // --------------------------------------------------
-  // LOAD ROUTE
-  // --------------------------------------------------
+  const loadRoute = useCallback(
+    async (startNode = START_NODE) => {
+      const requestId =
+        ++routeRequestIdRef.current;
 
-  const fetchRoute = useCallback(async () => {
-    try {
-      const response =
-        await fetch(
-          `${API}/green-corridor?start=J1&destination=J5`
-        );
+      try {
+        setRerouting(true);
 
-      if (!response.ok) {
-        throw new Error(
-          "Route API failed"
-        );
+        const url =
+          `${API}/green-corridor` +
+          `?start=${encodeURIComponent(startNode)}` +
+          `&destination=${encodeURIComponent(
+            DESTINATION_NODE
+          )}`;
+
+        const response = await fetch(url, {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          throw new Error(
+            `Route API error: ${response.status}`
+          );
+        }
+
+        const data = await response.json();
+
+        const backendRoute =
+          normalizeRoute(data);
+
+        /*
+          If backend gives a valid route, use it.
+        */
+        if (
+          backendRoute.length >= 2 &&
+          requestId === routeRequestIdRef.current
+        ) {
+          lastRouteStartRef.current =
+            backendRoute[0];
+
+          return backendRoute;
+        }
+
+        return [];
+      } catch (err) {
+        console.error("Route error:", err);
+        return [];
+      } finally {
+        if (
+          requestId === routeRequestIdRef.current
+        ) {
+          setRerouting(false);
+        }
       }
+    },
+    []
+  );
 
-      const data =
-        await response.json();
-
-      let newRoute =
-        data.emergency_route ||
-        data.route ||
-        [];
-
-      if (
-        !Array.isArray(newRoute) ||
-        newRoute.length < 2
-      ) {
-        newRoute =
-          FALLBACK_ROUTE;
-      }
-
-      /*
-       * Only update route when ambulance
-       * is NOT travelling.
-       *
-       * This prevents a congestion slider
-       * from teleporting the ambulance.
-       */
-
-      if (!journeyStarted) {
-        routeRef.current =
-          newRoute;
-
-        setRoute(
-          newRoute
-        );
-      }
-
-      /*
-       * If backend returned road data,
-       * update traffic data too.
-       */
-
-      if (
-        Array.isArray(data.roads) &&
-        data.roads.length > 0
-      ) {
-        roadsRef.current =
-          data.roads;
-
-        setTrafficData(
-          data.roads
-        );
-      }
-
-      return newRoute;
-    } catch (err) {
-      console.error(
-        "Route loading error:",
-        err
-      );
-
-      if (!journeyStarted) {
-        routeRef.current =
-          FALLBACK_ROUTE;
-
-        setRoute(
-          FALLBACK_ROUTE
-        );
-      }
-
-      return routeRef.current;
-    }
-  }, [journeyStarted]);
-
-  // --------------------------------------------------
-  // INITIAL LOAD
-  // --------------------------------------------------
-
+  /*
+    Initial city + route.
+  */
   useEffect(() => {
-    async function load() {
+    let cancelled = false;
+
+    async function initialize() {
       setLoading(true);
 
-      await Promise.all([
-        fetchTraffic(),
-        fetchRoute(),
-      ]);
+      const loadedRoads =
+        await loadCity();
 
+      const backendRoute =
+        await loadRoute(START_NODE);
+
+      if (cancelled) {
+        return;
+      }
+
+      /*
+        Backend route is preferred.
+        If backend route is unavailable, local traffic-aware
+        Dijkstra route is used.
+      */
+      const fallbackRoute =
+        calculateLocalRoute(
+          loadedRoads,
+          START_NODE,
+          DESTINATION_NODE
+        );
+
+      const finalRoute =
+        backendRoute.length >= 2
+          ? backendRoute
+          : fallbackRoute;
+
+      setRoute(finalRoute);
+
+      setProgress(0);
+      setCompleted(false);
+      setMoving(false);
       setLoading(false);
     }
 
-    load();
-  }, [fetchTraffic, fetchRoute]);
+    initialize();
 
-  // --------------------------------------------------
-  // FIND CURRENT ROAD
-  // --------------------------------------------------
+    return () => {
+      cancelled = true;
+    };
+  }, [loadCity, loadRoute]);
 
-  function getRoadForSegment(
-    segmentIndex
-  ) {
-    const currentRoute =
-      routeRef.current;
-
-    const currentRoads =
-      roadsRef.current;
-
-    if (
-      currentRoute.length < 2
-    ) {
-      return null;
+  /*
+    Get the road currently being travelled.
+  */
+  const currentSegmentIndex = useMemo(() => {
+    if (route.length < 2) {
+      return 0;
     }
 
-    if (
-      segmentIndex < 0 ||
-      segmentIndex >=
-        currentRoute.length - 1
-    ) {
-      return null;
-    }
-
-    const from =
-      currentRoute[
-        segmentIndex
-      ];
-
-    const to =
-      currentRoute[
-        segmentIndex + 1
-      ];
-
-    const road =
-      currentRoads.find(
-        (road) =>
-          (
-            road.start === from &&
-            road.end === to
-          ) ||
-          (
-            road.start === to &&
-            road.end === from
-          )
-      );
-
-    return road || null;
-  }
-
-  // --------------------------------------------------
-  // CURRENT ROAD
-  // --------------------------------------------------
-
-  function getCurrentRoad() {
-    const progress =
-      progressRef.current;
-
-    const segment =
-      Math.min(
-        Math.floor(progress),
-        Math.max(
-          routeRef.current.length - 2,
-          0
-        )
-      );
-
-    return getRoadForSegment(
-      segment
+    return Math.min(
+      Math.floor(progress),
+      route.length - 2
     );
-  }
+  }, [progress, route]);
 
-  // --------------------------------------------------
-  // EFFECTIVE SPEED
-  // --------------------------------------------------
-  //
-  // Congestion directly affects ambulance speed.
-  //
-  // 0%   = 100% speed
-  // 25%  = 87.5%
-  // 50%  = 75%
-  // 75%  = 62.5%
-  // 100% = 50%
-  //
-  // Emergency vehicle still moves.
-  // --------------------------------------------------
+  const currentFrom =
+    route[currentSegmentIndex] || START_NODE;
 
-  function getEffectiveSpeed(
-    road
-  ) {
-    if (!road) {
-      return 35;
-    }
+  const currentTo =
+    route[currentSegmentIndex + 1] ||
+    DESTINATION_NODE;
 
-    const baseSpeed =
-      Math.max(
-        15,
-        Number(
-          road.speed_kmph || 35
+  const currentRoad = useMemo(
+    () =>
+      findRoad(
+        roads,
+        currentFrom,
+        currentTo
+      ),
+    [roads, currentFrom, currentTo]
+  );
+
+  /*
+    Movement duration for the current road.
+
+    This makes congestion actually affect ambulance speed.
+  */
+  const getSegmentDuration = useCallback(
+    (from, to) => {
+      const road = findRoad(
+        roads,
+        from,
+        to
+      );
+
+      if (!road) {
+        /*
+          Fallback duration if road data is missing.
+        */
+        return 4500;
+      }
+
+      const distance = Math.max(
+        0.1,
+        Number(road.distance_km) || 1
+      );
+
+      const speed = Math.max(
+        5,
+        Number(road.speed_kmph) || 30
+      );
+
+      const traffic = Math.max(
+        0,
+        Math.min(
+          100,
+          Number(road.traffic) || 0
         )
       );
 
-    const traffic = Math.max(
+      /*
+        Same traffic model used by route calculation.
+      */
+      const congestionFactor = Math.max(
+        0.35,
+        1 - (0.65 * traffic) / 100
+      );
+
+      const effectiveSpeed = Math.max(
+        5,
+        speed * congestionFactor
+      );
+
+      /*
+        Real-world travel time converted into
+        a faster UI simulation.
+      */
+      const realSeconds =
+        (distance / effectiveSpeed) * 3600;
+
+      const simulatedMilliseconds =
+        (realSeconds / SIMULATION_SPEED) *
+        1000;
+
+      return Math.max(
+        1800,
+        simulatedMilliseconds
+      );
+    },
+    [roads]
+  );
+
+  /*
+    Apply a newly calculated route.
+
+    If ambulance is moving:
+      - don't teleport
+      - save as pending route
+      - apply after current road is completed
+
+    If ambulance isn't moving:
+      - apply immediately
+  */
+  const applyNewRoute = useCallback(
+    (newRoute) => {
+      if (!Array.isArray(newRoute)) {
+        return;
+      }
+
+      if (newRoute.length < 2) {
+        return;
+      }
+
+      if (!moving) {
+        setRoute(newRoute);
+        setProgress(0);
+        setCompleted(false);
+        return;
+      }
+
+      pendingRouteRef.current =
+        newRoute;
+    },
+    [moving]
+  );
+
+  /*
+    Recalculate route after traffic changes.
+  */
+  const recalculateRoute = useCallback(
+    async (latestRoads = roads) => {
+      if (!latestRoads.length) {
+        return;
+      }
+
+      /*
+        While moving, continue to the next junction first.
+      */
+      let routeStart = START_NODE;
+
+      if (moving) {
+        routeStart = currentTo;
+      }
+
+      /*
+        First try backend.
+      */
+      const backendRoute =
+        await loadRoute(routeStart);
+
+      /*
+        Always calculate local traffic-aware route too.
+        This guarantees the UI reacts to the slider even
+        if backend route logic returns an unchanged path.
+      */
+      const localRoute =
+        calculateLocalRoute(
+          latestRoads,
+          routeStart,
+          DESTINATION_NODE
+        );
+
+      /*
+        Prefer backend when it actually gives a usable route.
+        Otherwise local route is used.
+      */
+      const selectedRoute =
+        backendRoute.length >= 2
+          ? backendRoute
+          : localRoute;
+
+      if (selectedRoute.length >= 2) {
+        applyNewRoute(selectedRoute);
+      }
+    },
+    [
+      roads,
+      moving,
+      currentTo,
+      loadRoute,
+      applyNewRoute,
+    ]
+  );
+
+  /*
+    Traffic slider handler.
+
+    Important:
+    We update the screen immediately, then send the API request.
+    This makes the ambulance speed react without waiting for the server.
+  */
+  async function changeTraffic(
+    roadId,
+    value
+  ) {
+    const numericValue = Math.max(
       0,
-      Math.min(
-        100,
-        Number(
-          road.traffic || 0
-        )
-      )
+      Math.min(100, Number(value) || 0)
     );
 
     /*
-     * Strong enough visual difference
-     * between low and high congestion.
-     */
+      Optimistic update.
+    */
+    let updatedRoads = [];
 
-    const multiplier =
-      1 -
-      traffic * 0.005;
+    setRoads((previousRoads) => {
+      updatedRoads = previousRoads.map(
+        (road) =>
+          road.road_id === roadId
+            ? {
+                ...road,
+                traffic: numericValue,
+              }
+            : road
+      );
 
-    return Math.max(
-      baseSpeed * 0.5,
-      baseSpeed * multiplier
-    );
-  }
+      return updatedRoads;
+    });
 
-  // --------------------------------------------------
-  // VISUAL SPEED
-  // --------------------------------------------------
-  //
-  // We don't use real km/h directly because
-  // a browser map would become extremely slow.
-  //
-  // Instead:
-  //
-  // distance + speed + congestion
-  //        ↓
-  // visual segment duration
-  //        ↓
-  // ambulance progress
-  // --------------------------------------------------
-
-  function getVisualDuration(
-    road
-  ) {
-    if (!road) {
-      return 4;
+    /*
+      Debounce route calculation.
+      Without this, moving a slider would send dozens
+      of route requests.
+    */
+    if (trafficTimerRef.current) {
+      clearTimeout(
+        trafficTimerRef.current
+      );
     }
 
-    const distance =
-      Math.max(
-        0.5,
-        Number(
-          road.distance_km || 1
-        )
-      );
+    trafficTimerRef.current =
+      setTimeout(async () => {
+        try {
+          await fetch(
+            `${API}/update-traffic` +
+              `?road_id=${encodeURIComponent(
+                roadId
+              )}` +
+              `&traffic=${numericValue}`,
+            {
+              cache: "no-store",
+            }
+          );
 
-    const speed =
-      getEffectiveSpeed(
-        road
-      );
+          /*
+            Get authoritative traffic data from backend.
+          */
+          const freshRoads =
+            await loadCity();
 
-    const realSeconds =
-      (distance / speed) *
-      3600;
+          /*
+            Recalculate using fresh server data.
+          */
+          await recalculateRoute(
+            freshRoads.length
+              ? freshRoads
+              : updatedRoads
+          );
+        } catch (err) {
+          console.error(
+            "Traffic update error:",
+            err
+          );
 
-    /*
-     * Convert real travel time
-     * to visual animation time.
-     *
-     * Low traffic:
-     * roughly 2.5-4 sec
-     *
-     * High traffic:
-     * roughly 5-7 sec
-     */
-
-    const visualSeconds =
-      realSeconds * 0.055;
-
-    return Math.max(
-      2.5,
-      Math.min(
-        7,
-        visualSeconds
-      )
-    );
+          /*
+            Even if backend update fails,
+            local traffic-aware routing still works.
+          */
+          await recalculateRoute(
+            updatedRoads
+          );
+        }
+      }, ROUTE_DEBOUNCE_MS);
   }
 
-  // --------------------------------------------------
-  // AMBULANCE MOVEMENT
-  // --------------------------------------------------
-
-  useEffect(() => {
-    if (
-      !journeyStarted ||
-      completed ||
-      routeRef.current.length < 2
-    ) {
+  /*
+    Start ambulance journey.
+  */
+  function startJourney() {
+    if (route.length < 2) {
+      console.warn(
+        "No valid route available."
+      );
       return;
     }
 
+    pendingRouteRef.current = null;
+
+    setProgress(0);
+    setCompleted(false);
+    setMoving(true);
+
+    lastFrameRef.current = null;
+  }
+
+  /*
+    Reset.
+  */
+  function resetJourney() {
     if (animationRef.current) {
       cancelAnimationFrame(
         animationRef.current
       );
     }
 
-    lastFrameRef.current =
-      null;
+    pendingRouteRef.current = null;
+    lastFrameRef.current = null;
 
-    const animate = (
-      timestamp
-    ) => {
-      if (
-        lastFrameRef.current ===
-        null
-      ) {
+    setProgress(0);
+    setMoving(false);
+    setCompleted(false);
+  }
+
+  /*
+    MAIN AMBULANCE ENGINE
+
+    requestAnimationFrame gives smooth movement.
+
+    Unlike the old:
+      progress + 0.015
+
+    this version calculates movement based on:
+      road distance
+      road speed
+      congestion
+  */
+  useEffect(() => {
+    if (!moving || completed) {
+      return;
+    }
+
+    if (route.length < 2) {
+      return;
+    }
+
+    function animate(timestamp) {
+      if (!lastFrameRef.current) {
         lastFrameRef.current =
           timestamp;
       }
 
-      const deltaSeconds =
-        Math.min(
-          0.05,
-          (
-            timestamp -
-            lastFrameRef.current
-          ) / 1000
-        );
+      const delta =
+        timestamp -
+        lastFrameRef.current;
 
       lastFrameRef.current =
         timestamp;
 
-      const currentRoute =
-        routeRef.current;
+      setProgress((previousProgress) => {
+        const segmentIndex =
+          Math.min(
+            Math.floor(previousProgress),
+            route.length - 2
+          );
 
-      const destinationIndex =
-        currentRoute.length - 1;
+        const from =
+          route[segmentIndex];
 
-      const oldProgress =
-        progressRef.current;
+        const to =
+          route[segmentIndex + 1];
 
-      if (
-        oldProgress >=
-        destinationIndex
-      ) {
-        progressRef.current =
-          destinationIndex;
+        const duration =
+          getSegmentDuration(
+            from,
+            to
+          );
 
-        setAmbulanceProgress(
-          destinationIndex
-        );
+        const increment =
+          delta / duration;
 
-        setJourneyStarted(
-          false
-        );
+        let nextProgress =
+          previousProgress +
+          increment;
 
-        setCompleted(
-          true
-        );
+        /*
+          Current road completed.
+        */
+        if (
+          nextProgress >=
+          segmentIndex + 1
+        ) {
+          nextProgress =
+            segmentIndex + 1;
 
-        animationRef.current =
-          null;
+          /*
+            If a new route was waiting because
+            traffic changed during this road,
+            apply it HERE.
 
-        return;
-      }
+            Ambulance reaches junction first,
+            then takes the new route.
+          */
+          const pending =
+            pendingRouteRef.current;
 
-      /*
-       * Determine which road ambulance
-       * is physically travelling on.
-       */
+          if (
+            pending &&
+            pending.length >= 2
+          ) {
+            pendingRouteRef.current =
+              null;
 
-      const segmentIndex =
-        Math.min(
-          Math.floor(
-            oldProgress
-          ),
-          destinationIndex - 1
-        );
+            setRoute(pending);
+            setProgress(0);
 
-      const currentRoad =
-        getRoadForSegment(
-          segmentIndex
-        );
+            return 0;
+          }
 
-      /*
-       * IMPORTANT:
-       *
-       * This is recalculated EVERY FRAME.
-       *
-       * Therefore if the user changes
-       * congestion while ambulance is
-       * travelling, the speed changes
-       * immediately.
-       */
+          /*
+            Destination reached.
+          */
+          if (
+            segmentIndex >=
+            route.length - 2
+          ) {
+            setMoving(false);
+            setCompleted(true);
 
-      const duration =
-        getVisualDuration(
-          currentRoad
-        );
+            lastFrameRef.current =
+              null;
 
-      const progressPerSecond =
-        1 / duration;
+            return route.length - 1;
+          }
+        }
 
-      let nextProgress =
-        oldProgress +
-        progressPerSecond *
-          deltaSeconds;
-
-      /*
-       * Never jump over a junction.
-       */
-
-      const endOfCurrentSegment =
-        segmentIndex + 1;
-
-      if (
-        nextProgress >
-          endOfCurrentSegment
-      ) {
-        nextProgress =
-          endOfCurrentSegment;
-      }
-
-      /*
-       * Destination.
-       */
-
-      if (
-        nextProgress >=
-        destinationIndex
-      ) {
-        nextProgress =
-          destinationIndex;
-
-        progressRef.current =
-          nextProgress;
-
-        setAmbulanceProgress(
-          nextProgress
-        );
-
-        setJourneyStarted(
-          false
-        );
-
-        setCompleted(
-          true
-        );
-
-        animationRef.current =
-          null;
-
-        return;
-      }
-
-      /*
-       * Normal movement.
-       */
-
-      progressRef.current =
-        nextProgress;
-
-      setAmbulanceProgress(
-        nextProgress
-      );
+        return nextProgress;
+      });
 
       animationRef.current =
         requestAnimationFrame(
           animate
         );
-    };
+    }
 
     animationRef.current =
       requestAnimationFrame(
@@ -614,290 +820,61 @@ function App() {
       );
 
     return () => {
-      if (
-        animationRef.current
-      ) {
+      if (animationRef.current) {
         cancelAnimationFrame(
           animationRef.current
         );
       }
 
-      animationRef.current =
-        null;
-
-      lastFrameRef.current =
-        null;
+      animationRef.current = null;
+      lastFrameRef.current = null;
     };
   }, [
-    journeyStarted,
+    moving,
     completed,
+    route,
+    getSegmentDuration,
   ]);
 
-  // --------------------------------------------------
-  // START
-  // --------------------------------------------------
-
-  async function startJourney() {
-    /*
-     * Get the latest route BEFORE departure.
-     */
-
-    if (
-      routeRef.current.length < 2
-    ) {
-      await fetchRoute();
-    }
-
-    if (
-      routeRef.current.length < 2
-    ) {
-      return;
-    }
-
-    if (
-      animationRef.current
-    ) {
-      cancelAnimationFrame(
-        animationRef.current
-      );
-    }
-
-    progressRef.current =
-      0;
-
-    setAmbulanceProgress(
-      0
-    );
-
-    setCompleted(
-      false
-    );
-
-    setJourneyStarted(
-      true
-    );
-  }
-
-  // --------------------------------------------------
-  // RESET
-  // --------------------------------------------------
-
-  function resetJourney() {
-    if (
-      animationRef.current
-    ) {
-      cancelAnimationFrame(
-        animationRef.current
-      );
-    }
-
-    animationRef.current =
-      null;
-
-    lastFrameRef.current =
-      null;
-
-    progressRef.current =
-      0;
-
-    setAmbulanceProgress(
-      0
-    );
-
-    setJourneyStarted(
-      false
-    );
-
-    setCompleted(
-      false
-    );
-  }
-
-  // --------------------------------------------------
-  // UPDATE TRAFFIC
-  // --------------------------------------------------
-
-  async function updateTraffic(
-    roadId,
-    value
-  ) {
-    const traffic =
-      Math.max(
-        0,
-        Math.min(
-          100,
-          Number(value)
-        )
-      );
-
-    /*
-     * UPDATE LOCAL DATA FIRST.
-     *
-     * This is the most important part.
-     *
-     * Animation reads roadsRef every frame.
-     * So the running ambulance immediately
-     * sees the new congestion.
-     */
-
-    const updatedRoads =
-      roadsRef.current.map(
-        (road) =>
-          road.road_id === roadId
-            ? {
-                ...road,
-                traffic,
-              }
-            : road
-      );
-
-    roadsRef.current =
-      updatedRoads;
-
-    setTrafficData(
-      updatedRoads
-    );
-
-    /*
-     * Send to backend.
-     *
-     * DO NOT fetchRoute() here.
-     *
-     * Otherwise changing traffic while
-     * ambulance is moving can change the
-     * route and make the ambulance jump.
-     */
-
-    try {
-      await fetch(
-        `${API}/update-traffic?road_id=${encodeURIComponent(
-          roadId
-        )}&traffic=${traffic}`
-      );
-    } catch (error) {
-      console.error(
-        "Traffic update error:",
-        error
-      );
-    }
-  }
-
-  // --------------------------------------------------
-  // CURRENT INFORMATION
-  // --------------------------------------------------
-
-  const safeProgress =
-    Number.isFinite(
-      Number(
-        ambulanceProgress
-      )
-    )
-      ? Math.max(
-          0,
-          Number(
-            ambulanceProgress
-          )
-        )
-      : 0;
-
-  const currentSegment =
-    Math.min(
-      Math.floor(
-        safeProgress
-      ),
-      Math.max(
-        route.length - 2,
-        0
-      )
-    );
-
-  const currentFrom =
-    route[
-      currentSegment
-    ] || "J1";
-
-  const currentTo =
-    route[
-      currentSegment + 1
-    ] || "J5";
-
-  const currentRoad =
-    getRoadForSegment(
-      currentSegment
-    );
-
-  const currentTraffic =
-    Number(
-      currentRoad?.traffic || 0
-    );
+  /*
+    Cleanup debounce timer.
+  */
+  useEffect(() => {
+    return () => {
+      if (trafficTimerRef.current) {
+        clearTimeout(
+          trafficTimerRef.current
+        );
+      }
+    };
+  }, []);
 
   const progressPercent =
     route.length > 1
       ? Math.min(
           100,
           Math.round(
-            (
-              safeProgress /
-              (route.length - 1)
-            ) * 100
+            (progress /
+              (route.length - 1)) *
+              100
           )
         )
       : 0;
 
-  const getTrafficLevel = (
-    value
-  ) => {
-    if (value >= 70) {
-      return "HIGH";
-    }
+  const currentTraffic =
+    currentRoad
+      ? Number(currentRoad.traffic) || 0
+      : 0;
 
-    if (value >= 40) {
-      return "MEDIUM";
-    }
-
-    return "LOW";
-  };
-
-  // --------------------------------------------------
-  // LOADING
-  // --------------------------------------------------
-
-  if (loading) {
-    return (
-      <div className="loading-screen">
-        <div className="loading-card">
-          <div className="loading-icon">
-            🚑
-          </div>
-
-          <h2>
-            Emergency Corridor
-          </h2>
-
-          <p>
-            Connecting to traffic
-            intelligence...
-          </p>
-
-          <div className="loader" />
-        </div>
-      </div>
-    );
-  }
-
-  // --------------------------------------------------
-  // UI
-  // --------------------------------------------------
+  const currentSpeed =
+    currentRoad
+      ? Number(currentRoad.speed_kmph) || 0
+      : 0;
 
   return (
     <div className="app">
-
-      {/* HEADER */}
-
       <header className="topbar">
-
         <div className="brand">
-
           <div className="brand-icon">
             🚑
           </div>
@@ -912,59 +889,36 @@ function App() {
               Management
             </p>
           </div>
-
         </div>
 
         <div className="system-status">
-
-          <span
-            className={`status-dot ${
-              journeyStarted
-                ? "moving-dot"
-                : completed
-                ? "completed-dot"
-                : ""
-            }`}
-          />
+          <span className="status-dot" />
 
           <div>
-
             <strong>
               {completed
                 ? "JOURNEY COMPLETED"
-                : journeyStarted
+                : rerouting
+                ? "RECALCULATING ROUTE"
+                : moving
                 ? "AMBULANCE EN ROUTE"
                 : "SYSTEM READY"}
             </strong>
 
             <small>
-              {journeyStarted
-                ? `${currentFrom} → ${currentTo}`
-                : completed
-                ? "Hospital reached successfully"
-                : "Ready for emergency journey"}
+              Route:{" "}
+              {route.length
+                ? route.join(" → ")
+                : "Loading..."}
             </small>
-
           </div>
-
         </div>
-
       </header>
 
-      {/* DASHBOARD */}
-
       <main className="dashboard">
-
-        {/* LEFT */}
-
         <aside className="left-column">
-
-          {/* JOURNEY */}
-
           <section className="panel">
-
             <div className="panel-heading">
-
               <div className="panel-icon">
                 🚑
               </div>
@@ -975,154 +929,105 @@ function App() {
                 </h2>
 
                 <p>
-                  Live ambulance monitoring
+                  Live ambulance
+                  monitoring
                 </p>
               </div>
-
             </div>
 
             <div className="current-location-box">
-
               <span>
-                CURRENT ROAD
+                JOURNEY PROGRESS
               </span>
 
               <strong>
-                {journeyStarted
-                  ? currentRoad?.road_id ||
-                    "--"
-                  : completed
-                  ? "J5"
-                  : "J1"}
+                {progressPercent}%
               </strong>
 
               <div className="journey-state">
-
                 {completed
                   ? "🏥 HOSPITAL REACHED"
-                  : journeyStarted
+                  : moving
                   ? `🚑 ${currentFrom} → ${currentTo}`
                   : "READY"}
-
               </div>
-
             </div>
 
-            <div className="journey-grid">
-
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "1fr 1fr",
+                gap: "10px",
+                marginBottom: "12px",
+              }}
+            >
               <div>
-                <span>
-                  PROGRESS
-                </span>
-
-                <strong>
-                  {progressPercent}%
-                </strong>
-              </div>
-
-              <div>
-                <span>
+                <small>
                   CONGESTION
-                </span>
+                </small>
 
                 <strong>
-                  {journeyStarted
-                    ? `${currentTraffic}%`
-                    : "--"}
+                  {currentTraffic}%
                 </strong>
               </div>
 
               <div>
-                <span>
-                  SPEED
-                </span>
+                <small>
+                  ROAD SPEED
+                </small>
 
                 <strong>
-                  {journeyStarted
-                    ? `${Math.round(
-                        getEffectiveSpeed(
-                          currentRoad
-                        )
-                      )} km/h`
-                    : "--"}
+                  {currentSpeed} km/h
                 </strong>
               </div>
-
-              <div>
-                <span>
-                  NEXT
-                </span>
-
-                <strong>
-                  {completed
-                    ? "HOSPITAL"
-                    : currentTo}
-                </strong>
-              </div>
-
-            </div>
-
-            <div className="progress-section">
-
-              <div className="progress-header">
-
-                <span>
-                  JOURNEY PROGRESS
-                </span>
-
-                <strong>
-                  {progressPercent}%
-                </strong>
-
-              </div>
-
-              <div className="progress-track">
-
-                <div
-                  className="progress-fill"
-                  style={{
-                    width:
-                      `${progressPercent}%`,
-                  }}
-                />
-
-              </div>
-
             </div>
 
             <button
               className="primary-button"
-              onClick={
-                startJourney
-              }
+              onClick={startJourney}
               disabled={
-                journeyStarted
+                moving ||
+                loading ||
+                route.length < 2
               }
             >
-              {completed
-                ? "✓ Journey Completed"
-                : journeyStarted
+              {moving
                 ? "🚑 Ambulance Moving..."
+                : completed
+                ? "✓ Journey Completed"
+                : loading
+                ? "Loading Route..."
                 : "🚑 Start Journey"}
             </button>
 
-            <button
-              className="secondary-button"
-              onClick={
-                resetJourney
-              }
-            >
-              ↻ Reset Journey
-            </button>
+            {(moving || completed) && (
+              <button
+                className="secondary-button"
+                onClick={resetJourney}
+                style={{
+                  width: "100%",
+                  marginTop: "10px",
+                }}
+              >
+                ↻ Reset Journey
+              </button>
+            )}
 
+            {error && (
+              <p
+                style={{
+                  color: "#ff6b6b",
+                  marginTop: "12px",
+                }}
+              >
+                {error}
+              </p>
+            )}
           </section>
 
-          {/* TRAFFIC */}
-
           <section className="panel traffic-panel">
-
             <div className="panel-heading">
-
               <div className="panel-icon">
                 🚦
               </div>
@@ -1133,274 +1038,93 @@ function App() {
                 </h2>
 
                 <p>
-                  Change congestion dynamically
+                  Change congestion
+                  dynamically
                 </p>
               </div>
-
             </div>
 
             <div className="traffic-list">
+              {roads.map((road) => {
+                const traffic =
+                  Number(
+                    road.traffic
+                  ) || 0;
 
-              {trafficData.map(
-                (road) => {
-
-                  const traffic =
-                    Number(
-                      road.traffic || 0
-                    );
-
-                  const current =
-                    journeyStarted &&
-                    road.road_id ===
-                      currentRoad?.road_id;
-
-                  const level =
-                    getTrafficLevel(
-                      traffic
-                    );
-
-                  return (
-                    <div
-                      key={
-                        road.road_id
-                      }
-                      className={`traffic-item ${
-                        current
-                          ? "current-traffic"
-                          : ""
-                      }`}
-                    >
-
-                      <div className="traffic-top">
-
-                        <div>
-
-                          <strong>
-                            {
-                              road.road_id
-                            }
-                          </strong>
-
-                          <span>
-                            {
-                              road.start
-                            }{" "}
-                            →{" "}
-                            {
-                              road.end
-                            }
-                          </span>
-
-                        </div>
-
-                        <b
-                          className={level.toLowerCase()}
-                        >
-                          {traffic}%
-                        </b>
-
-                      </div>
-
-                      <input
-                        type="range"
-                        min="0"
-                        max="100"
-                        step="1"
-                        value={
-                          traffic
-                        }
-                        onChange={(
-                          e
-                        ) =>
-                          updateTraffic(
-                            road.road_id,
-                            e.target
-                              .value
-                          )
-                        }
-                      />
-
-                      <div className="traffic-bottom">
-
-                        <span>
-                          {traffic}%
-                          congestion
-                        </span>
-
-                        <span>
-                          {
-                            road.speed_kmph
-                          } km/h
-                        </span>
-
-                      </div>
-
-                      {current && (
-                        <small>
-                          🚑 Ambulance
-                          currently on
-                          this road
-                        </small>
-                      )}
-
-                    </div>
-                  );
-                }
-              )}
-
-            </div>
-
-          </section>
-
-        </aside>
-
-        {/* MAP */}
-
-        <section className="center-column">
-
-          <CityMap
-            roads={
-              trafficData
-            }
-            route={route}
-            ambulanceProgress={
-              ambulanceProgress
-            }
-            journeyStarted={
-              journeyStarted
-            }
-            completed={
-              completed
-            }
-          />
-
-        </section>
-
-        {/* RIGHT */}
-
-        <aside className="right-column">
-
-          {/* SIGNAL */}
-
-          <section className="panel">
-
-            <div className="panel-heading">
-
-              <div className="panel-icon">
-                🚦
-              </div>
-
-              <div>
-                <h2>
-                  Signal Priority
-                </h2>
-
-                <p>
-                  Emergency green corridor
-                </p>
-              </div>
-
-            </div>
-
-            <div className="signal-list">
-
-              {route.map(
-                (
-                  junction,
-                  index
-                ) => {
-
-                  /*
-                   * NEXT junction gets green.
-                   *
-                   * Example:
-                   * J1 -> J2
-                   * J2 signal = GREEN
-                   */
-
-                  const nextIndex =
-                    currentSegment + 1;
-
-                  const active =
-                    journeyStarted &&
-                    !completed &&
-                    index ===
-                      nextIndex;
-
-                  const passed =
-                    completed ||
-                    index <
-                      nextIndex;
-
-                  return (
-                    <div
-                      key={
-                        junction
-                      }
-                      className={`signal-item ${
-                        active ||
-                        passed
-                          ? "signal-active"
-                          : ""
-                      }`}
-                    >
-
-                      <div className="signal-light">
-
-                        <span
-                          className={
-                            active ||
-                            passed
-                              ? "green-light"
-                              : ""
-                          }
-                        />
-
-                      </div>
-
+                return (
+                  <div
+                    className="traffic-item"
+                    key={road.road_id}
+                  >
+                    <div className="traffic-top">
                       <div>
-
                         <strong>
-                          {junction}
+                          {road.road_id}
                         </strong>
 
-                        <small>
-                          {active
-                            ? "Priority Active"
-                            : passed
-                            ? "Passed"
-                            : "Standby"}
-                        </small>
-
+                        <span>
+                          {road.start} →{" "}
+                          {road.end}
+                        </span>
                       </div>
 
                       <b>
-                        {active ||
-                        passed
-                          ? "GREEN"
-                          : "NORMAL"}
+                        {Math.round(
+                          traffic
+                        )}
+                        %
                       </b>
-
                     </div>
-                  );
-                }
-              )}
 
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={traffic}
+                      onChange={(e) =>
+                        changeTraffic(
+                          road.road_id,
+                          e.target.value
+                        )
+                      }
+                    />
+
+                    <div className="traffic-bottom">
+                      <span>
+                        {Math.round(
+                          traffic
+                        )}
+                        % congestion
+                      </span>
+
+                      <span>
+                        {road.speed_kmph}{" "}
+                        km/h
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-
-            <div className="signal-message">
-              🟢 Green signal prepared for
-              the next junction
-            </div>
-
           </section>
+        </aside>
 
-          {/* ROUTE */}
+        <section className="center-column">
+          <CityMap
+            roads={roads}
+            route={route}
+            ambulanceProgress={
+              progress
+            }
+            journeyStarted={moving}
+            completed={completed}
+          />
+        </section>
 
+        <aside className="right-column">
           <section className="panel">
-
             <div className="panel-heading">
-
               <div className="panel-icon">
                 🧭
               </div>
@@ -1411,32 +1135,107 @@ function App() {
                 </h2>
 
                 <p>
-                  Traffic-aware decision
+                  Traffic-aware
+                  decision
                 </p>
               </div>
-
             </div>
 
             <div className="route-result">
-
               <span>
-                ACTIVE ROUTE
+                BEST ROUTE
               </span>
 
               <strong>
-                {route.join(
-                  " → "
-                )}
+                {route.length
+                  ? route.join(
+                      " → "
+                    )
+                  : "Loading route..."}
               </strong>
 
+              {rerouting && (
+                <small>
+                  Recalculating based
+                  on congestion...
+                </small>
+              )}
             </div>
-
           </section>
 
+          <section className="panel">
+            <div className="panel-heading">
+              <div className="panel-icon">
+                🚦
+              </div>
+
+              <div>
+                <h2>
+                  Signal Priority
+                </h2>
+
+                <p>
+                  Emergency green
+                  corridor
+                </p>
+              </div>
+            </div>
+
+            {route.map(
+              (junction, index) => {
+                const current =
+                  Math.floor(
+                    progress
+                  ) === index &&
+                  !completed;
+
+                const passed =
+                  completed ||
+                  progress > index;
+
+                return (
+                  <div
+                    className="signal-item"
+                    key={`${junction}-${index}`}
+                  >
+                    <div className="signal-light">
+                      <span
+                        className={
+                          current ||
+                          passed
+                            ? "green-light"
+                            : ""
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <strong>
+                        {junction}
+                      </strong>
+
+                      <small>
+                        {passed
+                          ? "Passed"
+                          : current
+                          ? "Priority Active"
+                          : "Standby"}
+                      </small>
+                    </div>
+
+                    <b>
+                      {current ||
+                      passed
+                        ? "GREEN"
+                        : "NORMAL"}
+                    </b>
+                  </div>
+                );
+              }
+            )}
+          </section>
         </aside>
-
       </main>
-
     </div>
   );
 }
