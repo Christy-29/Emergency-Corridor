@@ -2,11 +2,11 @@ import { useMemo } from "react";
 import "./CityMap.css";
 
 const NODE_POSITIONS = {
-  J1: { x: 100, y: 330 },
-  J2: { x: 330, y: 150 },
-  J3: { x: 330, y: 430 },
-  J4: { x: 650, y: 150 },
-  J5: { x: 900, y: 330 },
+  J1: { x: 90, y: 300 },
+  J2: { x: 300, y: 120 },
+  J3: { x: 300, y: 430 },
+  J4: { x: 610, y: 120 },
+  J5: { x: 900, y: 300 },
 };
 
 const DEFAULT_ROADS = [
@@ -60,60 +60,19 @@ const DEFAULT_ROADS = [
   },
 ];
 
-function getTrafficClass(
-  traffic
-) {
-  if (traffic >= 70) {
-    return "high";
-  }
+function trafficColor(traffic) {
+  const value = Number(traffic || 0);
 
-  if (traffic >= 40) {
-    return "medium";
-  }
-
-  return "low";
+  if (value >= 70) return "#ef4444";
+  if (value >= 40) return "#f59e0b";
+  return "#22c55e";
 }
 
-function getRoadColor(
-  traffic,
-  emergency,
-  current
-) {
-  if (
-    current &&
-    emergency
-  ) {
-    return "#00f5a0";
-  }
-
-  if (emergency) {
-    return "#00d9a0";
-  }
-
-  if (traffic >= 70) {
-    return "#ef4444";
-  }
-
-  if (traffic >= 40) {
-    return "#f59e0b";
-  }
-
-  return "#28758a";
-}
-
-function findRoad(
-  roads,
-  from,
-  to
-) {
-  return (
-    roads.find(
-      (road) =>
-        (road.start === from &&
-          road.end === to) ||
-        (road.start === to &&
-          road.end === from)
-    ) || null
+function findRoad(roads, from, to) {
+  return roads.find(
+    (road) =>
+      (road.start === from && road.end === to) ||
+      (road.start === to && road.end === from)
   );
 }
 
@@ -124,133 +83,122 @@ function CityMap({
   journeyStarted = false,
   completed = false,
 }) {
-  const cityRoads =
-    roads?.length
-      ? roads
-      : DEFAULT_ROADS;
+  const cityRoads = roads?.length ? roads : DEFAULT_ROADS;
 
   const activeRoute =
     route?.length >= 2
       ? route
       : ["J1", "J2", "J4", "J5"];
 
-  const currentSegment = Math.min(
-    Math.floor(
-      ambulanceProgress
-    ),
-    Math.max(
-      activeRoute.length - 2,
-      0
+  /*
+   * Example:
+   *
+   * 0     = J1
+   * 0.5   = halfway J1 -> J2
+   * 1     = J2
+   * 1.5   = halfway J2 -> J4
+   * 2     = J4
+   * 3     = J5
+   */
+
+  const safeProgress = Math.max(
+    0,
+    Math.min(
+      ambulanceProgress,
+      activeRoute.length - 1
     )
   );
 
-  const currentFrom =
-    activeRoute[
-      currentSegment
-    ] || activeRoute[0];
+  const segmentIndex = Math.min(
+    Math.floor(safeProgress),
+    activeRoute.length - 2
+  );
 
-  const currentTo =
-    activeRoute[
-      currentSegment + 1
-    ] ||
-    activeRoute[
-      activeRoute.length - 1
-    ];
+  const fromNode =
+    activeRoute[segmentIndex] ||
+    activeRoute[0];
 
-  /*
-    Fraction along current road.
+  const toNode =
+    activeRoute[segmentIndex + 1] ||
+    activeRoute[activeRoute.length - 1];
 
-    0   = start junction
-    .5  = middle
-    1   = destination junction
-  */
   const segmentProgress =
-    Math.max(
-      0,
-      Math.min(
-        1,
-        ambulanceProgress -
-          currentSegment
-      )
-    );
+    safeProgress - Math.floor(safeProgress);
 
   /*
-    EXACT ambulance position.
+   * Current road.
+   */
 
-    It uses the SAME coordinates as the road SVG.
-    Therefore ambulance stays directly on the road.
-  */
-  const ambulancePosition =
-    useMemo(() => {
-      const destinationNode =
-        activeRoute[
-          activeRoute.length - 1
-        ];
+  const currentRoad = findRoad(
+    cityRoads,
+    fromNode,
+    toNode
+  );
 
-      if (completed) {
-        return (
-          NODE_POSITIONS[
-            destinationNode
-          ] ||
-          NODE_POSITIONS.J5
-        );
-      }
+  /*
+   * Ambulance position is calculated using
+   * EXACTLY the same coordinates as the road.
+   */
 
-      const from =
+  const ambulancePosition = useMemo(() => {
+    if (completed) {
+      const destination =
         NODE_POSITIONS[
-          currentFrom
+          activeRoute[
+            activeRoute.length - 1
+          ]
         ];
 
-      const to =
-        NODE_POSITIONS[
-          currentTo
-        ];
+      return destination || NODE_POSITIONS.J5;
+    }
 
-      if (!from || !to) {
-        return NODE_POSITIONS.J1;
-      }
+    const from =
+      NODE_POSITIONS[fromNode];
 
-      return {
-        x:
-          from.x +
-          (to.x - from.x) *
-            segmentProgress,
+    const to =
+      NODE_POSITIONS[toNode];
 
-        y:
-          from.y +
-          (to.y - from.y) *
-            segmentProgress,
-      };
-    }, [
-      activeRoute,
-      currentFrom,
-      currentTo,
-      segmentProgress,
-      completed,
-    ]);
+    if (!from || !to) {
+      return NODE_POSITIONS.J1;
+    }
 
-  function isEmergencyRoad(
-    road
-  ) {
+    return {
+      x:
+        from.x +
+        (to.x - from.x) *
+          segmentProgress,
+
+      y:
+        from.y +
+        (to.y - from.y) *
+          segmentProgress,
+    };
+  }, [
+    activeRoute,
+    completed,
+    fromNode,
+    toNode,
+    segmentProgress,
+  ]);
+
+  /*
+   * Which road belongs to emergency corridor?
+   */
+
+  function isRouteRoad(road) {
     for (
-      let index = 0;
-      index <
-      activeRoute.length - 1;
-      index++
+      let i = 0;
+      i < activeRoute.length - 1;
+      i++
     ) {
-      const from =
-        activeRoute[index];
-
-      const to =
-        activeRoute[
-          index + 1
-        ];
+      const a = activeRoute[i];
+      const b = activeRoute[i + 1];
 
       if (
-        (road.start === from &&
-          road.end === to) ||
-        (road.start === to &&
-          road.end === from)
+        (road.start === a &&
+          road.end === b) ||
+        (road.start === b &&
+          road.end === a)
       ) {
         return true;
       }
@@ -259,23 +207,61 @@ function CityMap({
     return false;
   }
 
-  function isCurrentRoad(
-    road
-  ) {
+  /*
+   * Current road only.
+   */
+
+  function isCurrentRoad(road) {
     return (
-      (road.start ===
-        currentFrom &&
-        road.end ===
-          currentTo) ||
-      (road.start ===
-        currentTo &&
-        road.end ===
-          currentFrom)
+      (road.start === fromNode &&
+        road.end === toNode) ||
+      (road.start === toNode &&
+        road.end === fromNode)
     );
   }
 
+  /*
+   * NEXT junction.
+   *
+   * This is the junction that gets emergency green.
+   */
+
+  const nextJunction =
+    completed
+      ? null
+      : activeRoute[
+          Math.min(
+            Math.floor(safeProgress) + 1,
+            activeRoute.length - 1
+          )
+        ];
+
+  /*
+   * Current junction.
+   */
+
+  const currentJunction =
+    activeRoute[
+      Math.floor(safeProgress)
+    ];
+
+  /*
+   * Current road speed.
+   */
+
+  const currentSpeed =
+    Number(
+      currentRoad?.speed_kmph || 0
+    );
+
+  const currentTraffic =
+    Number(
+      currentRoad?.traffic || 0
+    );
+
   return (
     <div className="city-map-container">
+
       {/* HEADER */}
 
       <div className="map-header">
@@ -287,9 +273,21 @@ function CityMap({
           <h2>
             Emergency Corridor Map
           </h2>
+
+          <p className="map-subtitle">
+            Traffic-aware ambulance navigation
+          </p>
         </div>
 
-        <div className="map-status">
+        <div
+          className={`map-status ${
+            journeyStarted
+              ? "status-moving"
+              : completed
+              ? "status-complete"
+              : ""
+          }`}
+        >
           <span className="live-dot" />
 
           {completed
@@ -303,478 +301,658 @@ function CityMap({
       {/* MAP */}
 
       <div className="city-map">
-        <div className="district north">
+
+        <div className="district district-north">
           NORTH DISTRICT
         </div>
 
-        <div className="district east">
-          EAST DISTRICT
-        </div>
-
-        <div className="district west">
+        <div className="district district-west">
           WEST DISTRICT
         </div>
 
-        {/* ROADS */}
+        <div className="district district-east">
+          EAST DISTRICT
+        </div>
+
+        {/* SVG MAP */}
 
         <svg
-          className="road-svg"
+          className="city-network"
           viewBox="0 0 1000 550"
-          preserveAspectRatio="none"
+          preserveAspectRatio="xMidYMid meet"
         >
-          {/* Road shadow layer */}
 
-          {cityRoads.map(
-            (road) => {
-              const start =
-                NODE_POSITIONS[
-                  road.start
-                ];
+          <defs>
 
-              const end =
-                NODE_POSITIONS[
-                  road.end
-                ];
+            <filter
+              id="greenGlow"
+              x="-100%"
+              y="-100%"
+              width="300%"
+              height="300%"
+            >
+              <feGaussianBlur
+                stdDeviation="5"
+                result="blur"
+              />
 
-              if (!start || !end) {
-                return null;
-              }
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
 
-              return (
+            <filter
+              id="ambulanceGlow"
+              x="-200%"
+              y="-200%"
+              width="400%"
+              height="400%"
+            >
+              <feGaussianBlur
+                stdDeviation="9"
+                result="blur"
+              />
+
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+
+          </defs>
+
+          {/* ROADS */}
+
+          {cityRoads.map((road) => {
+            const start =
+              NODE_POSITIONS[road.start];
+
+            const end =
+              NODE_POSITIONS[road.end];
+
+            if (!start || !end) {
+              return null;
+            }
+
+            const routeRoad =
+              isRouteRoad(road);
+
+            const current =
+              isCurrentRoad(road);
+
+            const traffic =
+              Number(road.traffic || 0);
+
+            const color =
+              trafficColor(traffic);
+
+            return (
+              <g key={road.road_id}>
+
+                {/* ROAD SHADOW */}
+
                 <line
-                  key={`shadow-${road.road_id}`}
                   x1={start.x}
                   y1={start.y}
                   x2={end.x}
                   y2={end.y}
-                  stroke="#02080d"
-                  strokeWidth="18"
+                  stroke="#000"
+                  strokeWidth="20"
+                  strokeLinecap="round"
+                  opacity="0.55"
+                />
+
+                {/* ROAD BASE */}
+
+                <line
+                  x1={start.x}
+                  y1={start.y}
+                  x2={end.x}
+                  y2={end.y}
+                  stroke={
+                    current &&
+                    journeyStarted
+                      ? "#00f5a0"
+                      : "#29495a"
+                  }
+                  strokeWidth={
+                    current &&
+                    journeyStarted
+                      ? 13
+                      : routeRoad
+                      ? 9
+                      : 7
+                  }
                   strokeLinecap="round"
                 />
-              );
-            }
-          )}
 
-          {/* Main roads */}
+                {/* TRAFFIC COLOR */}
 
-          {cityRoads.map(
-            (road) => {
-              const start =
-                NODE_POSITIONS[
-                  road.start
-                ];
+                <line
+                  x1={start.x}
+                  y1={start.y}
+                  x2={end.x}
+                  y2={end.y}
+                  stroke={
+                    current &&
+                    journeyStarted
+                      ? "#00f5a0"
+                      : color
+                  }
+                  strokeWidth={
+                    current &&
+                    journeyStarted
+                      ? 8
+                      : 4
+                  }
+                  strokeLinecap="round"
+                  opacity={
+                    routeRoad
+                      ? 1
+                      : 0.65
+                  }
+                />
 
-              const end =
-                NODE_POSITIONS[
-                  road.end
-                ];
+                {/* ROAD CENTER MARKING */}
 
-              if (!start || !end) {
-                return null;
-              }
+                <line
+                  x1={start.x}
+                  y1={start.y}
+                  x2={end.x}
+                  y2={end.y}
+                  stroke="#d8f7ff"
+                  strokeWidth="2"
+                  strokeDasharray="14 14"
+                  opacity="0.3"
+                />
 
-              const emergency =
-                isEmergencyRoad(
-                  road
-                );
+              </g>
+            );
+          })}
 
-              const current =
-                isCurrentRoad(
-                  road
-                );
+          {/* ROAD LABELS */}
 
-              const traffic =
-                Number(
-                  road.traffic
-                ) || 0;
-
-              const color =
-                getRoadColor(
-                  traffic,
-                  emergency,
-                  current
-                );
-
-              return (
-                <g
-                  key={road.road_id}
-                >
-                  {/* Outer road */}
-
-                  <line
-                    x1={start.x}
-                    y1={start.y}
-                    x2={end.x}
-                    y2={end.y}
-                    stroke={color}
-                    strokeWidth={
-                      current &&
-                      journeyStarted
-                        ? 12
-                        : emergency
-                        ? 9
-                        : 7
-                    }
-                    strokeLinecap="round"
-                    opacity={
-                      current &&
-                      journeyStarted
-                        ? 1
-                        : emergency
-                        ? 0.95
-                        : 0.82
-                    }
-                  />
-
-                  {/* Road center marking */}
-
-                  <line
-                    x1={start.x}
-                    y1={start.y}
-                    x2={end.x}
-                    y2={end.y}
-                    stroke="#ffffff"
-                    strokeWidth="2"
-                    strokeDasharray="12 14"
-                    strokeLinecap="round"
-                    opacity="0.35"
-                  />
-
-                  {/* Active emergency road glow */}
-
-                  {current &&
-                    journeyStarted && (
-                      <line
-                        x1={start.x}
-                        y1={start.y}
-                        x2={end.x}
-                        y2={end.y}
-                        stroke="#00f5a0"
-                        strokeWidth="18"
-                        strokeLinecap="round"
-                        opacity="0.13"
-                      />
-                    )}
-                </g>
-              );
-            }
-          )}
-        </svg>
-
-        {/* ROAD LABELS */}
-
-        {cityRoads.map(
-          (road) => {
+          {cityRoads.map((road) => {
             const start =
-              NODE_POSITIONS[
-                road.start
-              ];
+              NODE_POSITIONS[road.start];
 
             const end =
-              NODE_POSITIONS[
-                road.end
-              ];
+              NODE_POSITIONS[road.end];
 
             if (!start || !end) {
               return null;
             }
 
             const x =
-              (start.x + end.x) /
-              2;
+              (start.x + end.x) / 2;
 
             const y =
-              (start.y + end.y) /
-              2;
-
-            const emergency =
-              isEmergencyRoad(
-                road
-              );
-
-            const current =
-              isCurrentRoad(
-                road
-              );
+              (start.y + end.y) / 2;
 
             const traffic =
-              Number(
-                road.traffic
-              ) || 0;
+              Number(road.traffic || 0);
 
-            const trafficClass =
-              getTrafficClass(
-                traffic
-              );
+            const routeRoad =
+              isRouteRoad(road);
 
             return (
-              <div
+              <g
                 key={`label-${road.road_id}`}
-                className={`road-label ${
-                  emergency
-                    ? "emergency-road-label"
-                    : ""
-                } ${
-                  current &&
-                  journeyStarted
-                    ? "current-road-label"
-                    : ""
-                }`}
-                style={{
-                  left: `${x / 10}%`,
-                  top: `${y / 5.5}%`,
-                  transform:
-                    "translate(-50%, -50%)",
-                }}
+                transform={`translate(${x}, ${y})`}
               >
-                <strong>
-                  {road.road_id}
-                </strong>
 
-                <span
-                  className={`traffic-badge ${trafficClass}`}
+                <rect
+                  x="-38"
+                  y="-16"
+                  width="76"
+                  height="32"
+                  rx="8"
+                  fill="#061923"
+                  stroke={
+                    routeRoad
+                      ? "#00f5a0"
+                      : "#1c5265"
+                  }
+                  strokeWidth="1.5"
+                />
+
+                <text
+                  x="-27"
+                  y="-1"
+                  fill="#00d9ff"
+                  fontSize="13"
+                  fontWeight="700"
                 >
-                  {Math.round(
-                    traffic
-                  )}
-                  %
-                </span>
-              </div>
+                  {road.road_id}
+                </text>
+
+                <text
+                  x="8"
+                  y="-1"
+                  fill={
+                    traffic >= 70
+                      ? "#ff5c67"
+                      : traffic >= 40
+                      ? "#ffbf3c"
+                      : "#34e7a1"
+                  }
+                  fontSize="12"
+                  fontWeight="700"
+                >
+                  {traffic}%
+                </text>
+
+                <text
+                  x="0"
+                  y="11"
+                  textAnchor="middle"
+                  fill="#6d8b9a"
+                  fontSize="8"
+                >
+                  CONGESTION
+                </text>
+
+              </g>
             );
-          }
-        )}
+          })}
 
-        {/* JUNCTIONS */}
+          {/* JUNCTIONS */}
 
-        {Object.entries(
-          NODE_POSITIONS
-        ).map(
-          ([
-            junction,
-            position,
-          ]) => {
-            const routeIndex =
-              activeRoute.indexOf(
-                junction
-              );
+          {Object.entries(
+            NODE_POSITIONS
+          ).map(
+            ([junction, position]) => {
 
-            const isRoute =
-              routeIndex !== -1;
+              const routeIndex =
+                activeRoute.indexOf(
+                  junction
+                );
 
-            const currentIndex =
-              Math.floor(
-                ambulanceProgress
-              );
+              const isRoute =
+                routeIndex !== -1;
 
-            const isCurrent =
-              journeyStarted &&
-              !completed &&
-              routeIndex ===
-                currentIndex;
+              const isDestination =
+                junction ===
+                activeRoute[
+                  activeRoute.length - 1
+                ];
 
-            const isPassed =
-              completed ||
-              (routeIndex !== -1 &&
+              /*
+               * ONLY next junction is green.
+               */
+
+              const isNext =
+                journeyStarted &&
+                !completed &&
+                junction ===
+                  nextJunction;
+
+              const isCurrent =
+                journeyStarted &&
+                !completed &&
+                junction ===
+                  currentJunction;
+
+              const isPassed =
+                routeIndex !== -1 &&
                 routeIndex <
-                  currentIndex);
+                  Math.floor(
+                    safeProgress
+                  );
 
-            const isDestination =
-              junction ===
-              activeRoute[
-                activeRoute.length -
-                  1
-              ];
+              return (
+                <g
+                  key={junction}
+                  transform={`translate(${position.x}, ${position.y})`}
+                >
 
-            return (
-              <div
-                key={junction}
-                className={`junction ${
-                  isRoute
-                    ? "route-junction"
-                    : ""
-                } ${
-                  isCurrent
-                    ? "current-junction"
-                    : ""
-                } ${
-                  isDestination
-                    ? "hospital-junction"
-                    : ""
-                }`}
-                style={{
-                  left: `${position.x / 10}%`,
-                  top: `${position.y / 5.5}%`,
-                  transform:
-                    "translate(-50%, -50%)",
-                }}
-              >
-                <div className="junction-circle">
-                  {isDestination
-                    ? "🏥"
-                    : junction.replace(
-                        "J",
-                        ""
-                      )}
-                </div>
+                  {/* GLOW */}
 
-                <strong>
-                  {junction}
-                </strong>
+                  {(isNext ||
+                    isCurrent) && (
+                    <circle
+                      r="42"
+                      fill="#00f5a0"
+                      opacity="0.12"
+                      filter="url(#greenGlow)"
+                    />
+                  )}
 
-                <span>
-                  {isDestination
-                    ? "HOSPITAL"
-                    : "JUNCTION"}
-                </span>
+                  {/* NODE */}
 
-                {isRoute &&
-                  !isDestination && (
-                    <div
-                      className={`traffic-signal ${
-                        isCurrent
-                          ? "signal-green"
-                          : ""
-                      }`}
+                  <circle
+                    r="30"
+                    fill={
+                      isDestination
+                        ? "#123b66"
+                        : "#071b27"
+                    }
+                    stroke={
+                      isNext ||
+                      isCurrent
+                        ? "#00f5a0"
+                        : isDestination
+                        ? "#4b9cff"
+                        : "#315264"
+                    }
+                    strokeWidth="4"
+                  />
+
+                  <text
+                    x="0"
+                    y="7"
+                    textAnchor="middle"
+                    fill="#fff"
+                    fontSize="21"
+                    fontWeight="800"
+                  >
+                    {isDestination
+                      ? "🏥"
+                      : junction.replace(
+                          "J",
+                          ""
+                        )}
+                  </text>
+
+                  {/* JUNCTION NAME */}
+
+                  <text
+                    x="0"
+                    y="58"
+                    textAnchor="middle"
+                    fill="#dffaff"
+                    fontSize="14"
+                    fontWeight="800"
+                  >
+                    {junction}
+                  </text>
+
+                  <text
+                    x="0"
+                    y="75"
+                    textAnchor="middle"
+                    fill="#5f8798"
+                    fontSize="9"
+                    letterSpacing="2"
+                  >
+                    {isDestination
+                      ? "HOSPITAL"
+                      : "JUNCTION"}
+                  </text>
+
+                  {/* SIGNAL */}
+
+                  {isRoute &&
+                    !isDestination && (
+                      <g
+                        transform="translate(34,-27)"
+                      >
+
+                        <rect
+                          x="0"
+                          y="0"
+                          width="16"
+                          height="55"
+                          rx="8"
+                          fill="#08131b"
+                          stroke="#27414e"
+                          strokeWidth="2"
+                        />
+
+                        <circle
+                          cx="8"
+                          cy="10"
+                          r="4"
+                          fill={
+                            isNext
+                              ? "#00f5a0"
+                              : "#24343c"
+                          }
+                          filter={
+                            isNext
+                              ? "url(#greenGlow)"
+                              : undefined
+                          }
+                        />
+
+                        <circle
+                          cx="8"
+                          cy="27"
+                          r="4"
+                          fill="#8b3030"
+                        />
+
+                        <circle
+                          cx="8"
+                          cy="44"
+                          r="4"
+                          fill="#b17825"
+                        />
+
+                      </g>
+                    )}
+
+                  {/* PASSED */}
+
+                  {isPassed && (
+                    <text
+                      x="-40"
+                      y="-35"
+                      fill="#00f5a0"
+                      fontSize="18"
+                      fontWeight="900"
                     >
-                      <span />
-                      <span />
-                      <span />
-                    </div>
-                  )}
-
-                {isPassed &&
-                  !isDestination && (
-                    <div className="passed-indicator">
                       ✓
-                    </div>
+                    </text>
                   )}
-              </div>
-            );
-          }
-        )}
 
-        {/* AMBULANCE */}
+                </g>
+              );
+            }
+          )}
 
-        <div
-          className={`ambulance-marker ${
-            journeyStarted
-              ? "moving"
-              : ""
-          } ${
-            completed
-              ? "arrived"
-              : ""
-          }`}
-          style={{
-            left: `${ambulancePosition.x / 10}%`,
-            top: `${ambulancePosition.y / 5.5}%`,
-          }}
-        >
-          <div className="ambulance-glow" />
+          {/* AMBULANCE */}
 
-          <div className="ambulance-icon">
-            🚑
-          </div>
+          <g
+            transform={`translate(
+              ${ambulancePosition.x},
+              ${ambulancePosition.y}
+            )`}
+            className={
+              journeyStarted
+                ? "ambulance-svg moving"
+                : "ambulance-svg"
+            }
+          >
 
-          <div className="ambulance-tag">
-            {completed
-              ? "ARRIVED"
-              : journeyStarted
-              ? `${currentFrom} → ${currentTo}`
-              : "READY"}
-          </div>
-        </div>
+            <circle
+              r="34"
+              fill="#00f5a0"
+              opacity="0.12"
+              filter="url(#ambulanceGlow)"
+            />
 
-        {/* MAP LEGEND */}
+            <circle
+              r="25"
+              fill="#071923"
+              stroke="#00f5a0"
+              strokeWidth="3"
+            />
 
-        <div className="map-legend">
-          <h3>
-            MAP LEGEND
-          </h3>
+            <text
+              x="0"
+              y="8"
+              textAnchor="middle"
+              fontSize="25"
+            >
+              🚑
+            </text>
+
+            <rect
+              x="-43"
+              y="35"
+              width="86"
+              height="22"
+              rx="8"
+              fill="#001d25"
+              stroke="#00f5a0"
+            />
+
+            <text
+              x="0"
+              y="50"
+              textAnchor="middle"
+              fill="#00f5a0"
+              fontSize="9"
+              fontWeight="800"
+            >
+              {completed
+                ? "ARRIVED"
+                : journeyStarted
+                ? "AMBULANCE"
+                : "READY"}
+            </text>
+
+          </g>
+
+        </svg>
+
+        {/* MAP INFO */}
+
+        <div className="map-info-card">
 
           <div>
-            <span className="legend-line emergency" />
-            Emergency Corridor
+            <span>CURRENT ROAD</span>
+            <strong>
+              {currentRoad?.road_id ||
+                "—"}
+            </strong>
           </div>
 
           <div>
-            <span className="legend-line normal" />
-            Normal Road
+            <span>CONGESTION</span>
+            <strong>
+              {currentTraffic}%
+            </strong>
           </div>
 
           <div>
-            <span className="legend-dot green" />
-            Green Signal
+            <span>SPEED</span>
+            <strong>
+              {currentSpeed} km/h
+            </strong>
           </div>
 
           <div>
-            🚑 Ambulance
+            <span>NEXT JUNCTION</span>
+            <strong>
+              {completed
+                ? "HOSPITAL"
+                : nextJunction ||
+                  "—"}
+            </strong>
           </div>
+
         </div>
 
         {/* ACTIVE ROUTE */}
 
         <div className="active-route-box">
+
           <span>
             ACTIVE ROUTE
           </span>
 
           <strong>
             {activeRoute.join(
-              " → "
+              "  →  "
             )}
           </strong>
+
         </div>
+
+        {/* LEGEND */}
+
+        <div className="map-legend">
+
+          <h3>MAP LEGEND</h3>
+
+          <div>
+            <span className="legend-road green" />
+            Emergency Corridor
+          </div>
+
+          <div>
+            <span className="legend-road normal" />
+            Normal Road
+          </div>
+
+          <div>
+            <span className="legend-road red" />
+            Heavy Congestion
+          </div>
+
+          <div>
+            <span className="legend-signal" />
+            Emergency Green
+          </div>
+
+          <div>
+            🚑 Ambulance
+          </div>
+
+        </div>
+
       </div>
 
       {/* FOOTER */}
 
       <div className="map-footer">
+
         <div>
-          <span>
-            CURRENT NODE
-          </span>
+          <span>CURRENT NODE</span>
 
           <strong>
             {completed
               ? activeRoute[
-                  activeRoute.length -
-                    1
+                  activeRoute.length - 1
                 ]
-              : currentFrom}
+              : currentJunction}
           </strong>
         </div>
 
         <div>
-          <span>
-            NEXT NODE
-          </span>
+          <span>NEXT NODE</span>
 
           <strong>
             {completed
               ? "HOSPITAL"
-              : currentTo}
+              : nextJunction}
           </strong>
         </div>
 
         <div>
-          <span>
-            CORRIDOR
-          </span>
+          <span>ROAD</span>
 
           <strong>
-            {activeRoute.join(
-              " → "
-            )}
+            {currentRoad?.road_id ||
+              "—"}
           </strong>
         </div>
 
         <div>
-          <span>
-            STATUS
-          </span>
+          <span>STATUS</span>
 
-          <strong className="moving-status">
+          <strong
+            className={
+              completed
+                ? "arrived"
+                : journeyStarted
+                ? "moving-status"
+                : ""
+            }
+          >
             {completed
               ? "✓ ARRIVED"
               : journeyStarted
@@ -782,7 +960,9 @@ function CityMap({
               : "○ READY"}
           </strong>
         </div>
+
       </div>
+
     </div>
   );
 }
