@@ -1,32 +1,20 @@
-/* =========================================================
-   GLOBAL RESET
-========================================================= */
-
 * {
   box-sizing: border-box;
 }
 
-html,
-body,
-#root {
-  margin: 0;
-  padding: 0;
-  min-height: 100%;
-  width: 100%;
-}
-
 body {
+  margin: 0;
   font-family:
     Inter,
+    ui-sans-serif,
     system-ui,
     -apple-system,
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
 
-  background: #020b12;
-  color: #f4f8fb;
-  overflow-x: hidden;
+  background: #020d13;
+  color: #e7f7fa;
 }
 
 button,
@@ -34,1207 +22,702 @@ input {
   font: inherit;
 }
 
-button {
-  cursor: pointer;
-}
-
-/* =========================================================
-   APP
-========================================================= */
-
 .app {
   min-height: 100vh;
-  width: 100%;
   background:
     radial-gradient(
-      circle at 50% 20%,
-      rgba(0, 180, 220, 0.06),
+      circle at 50% 30%,
+      rgba(0, 190, 220, 0.08),
       transparent 35%
     ),
-    #020b12;
+    #020d13;
 }
 
-/* =========================================================
-   HEADER
-========================================================= */
+/* HEADER */
 
-.topbar {
-  width: 100%;
-  min-height: 86px;
+.header {
+  height: 126px;
+  padding: 20px 28px;
 
   display: flex;
   align-items: center;
   justify-content: space-between;
 
-  padding: 16px 28px;
+  border-bottom: 1px solid #12303c;
 
-  background: rgba(4, 15, 24, 0.96);
-  border-bottom: 1px solid #153746;
-
-  position: sticky;
-  top: 0;
-  z-index: 100;
+  background: rgba(2, 15, 22, 0.96);
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 16px;
-
-  min-width: 0;
+  gap: 18px;
 }
 
 .brand-icon {
-  width: 56px;
-  height: 56px;
+  width: 76px;
+  height: 76px;
 
   display: grid;
   place-items: center;
 
-  flex-shrink: 0;
+  border-radius: 20px;
 
-  border-radius: 17px;
+  font-size: 38px;
 
   background: linear-gradient(
-    135deg,
-    #ef4444,
-    #c71939
+    145deg,
+    #ff334d,
+    #d71939
   );
 
-  font-size: 28px;
-
-  box-shadow:
-    0 10px 30px rgba(239, 68, 68, 0.2);
+  box-shadow: 0 0 30px rgba(255, 40, 70, 0.25);
 }
 
 .brand h1 {
   margin: 0;
 
-  font-size: 24px;
+  font-size: 34px;
   font-weight: 800;
 
-  color: #f7fbff;
-
-  white-space: nowrap;
+  letter-spacing: -1px;
 }
 
 .brand p {
-  margin: 5px 0 0;
+  margin: 6px 0 0;
 
-  font-size: 13px;
-  color: #6f8da0;
+  color: #7593a0;
 }
 
-/* =========================================================
-   SYSTEM STATUS
-========================================================= */
-
-.system-status {
-  min-width: 240px;
+.header-status {
+  min-width: 280px;
 
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 
-  padding: 13px 18px;
+  padding: 18px 24px;
 
-  border: 1px solid #174557;
-  border-radius: 18px;
+  border: 1px solid #12485a;
+  border-radius: 20px;
 
-  background: rgba(5, 27, 36, 0.9);
+  background: rgba(4, 31, 40, 0.75);
 }
 
 .status-dot {
-  width: 12px;
-  height: 12px;
-
-  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
 
   border-radius: 50%;
 
-  background: #64748b;
+  background: #00e7ad;
+
+  box-shadow: 0 0 16px #00e7ad;
 }
 
-.moving-dot {
-  background: #20e0a0;
-
-  box-shadow:
-    0 0 8px #20e0a0,
-    0 0 18px rgba(32, 224, 160, 0.7);
-}
-
-.completed-dot {
-  background: #22c55e;
-}
-
-.system-status strong {
+.header-status strong {
   display: block;
 
-  font-size: 12px;
-  letter-spacing: 0.5px;
+  color: #a9ffe8;
+  font-size: 14px;
 }
 
-.system-status small {
+.header-status small {
   display: block;
 
   margin-top: 5px;
 
-  font-size: 11px;
-  color: #668497;
+  color: #66838e;
 }
 
-/* =========================================================
-   DASHBOARD
-========================================================= */
+/* LAYOUT */
 
-.dashboard {
-  width: 100%;
-
+.layout {
   display: grid;
 
   grid-template-columns:
-    minmax(280px, 320px)
-    minmax(500px, 1fr)
-    minmax(280px, 320px);
+    370px
+    minmax(650px, 1fr)
+    370px;
 
   gap: 18px;
 
-  padding: 24px;
-
-  align-items: start;
+  padding: 18px;
 }
 
-/* Important:
-   Prevent grid children from forcing the page wider.
-*/
-
-.left-column,
-.center-column,
-.right-column {
-  min-width: 0;
-  width: 100%;
-}
-
-.left-column,
-.right-column {
+.sidebar,
+.right-sidebar {
   display: flex;
   flex-direction: column;
   gap: 18px;
 }
 
-/* =========================================================
-   PANELS
-========================================================= */
-
-.panel {
-  width: 100%;
-  min-width: 0;
-
-  padding: 22px;
-
-  border: 1px solid #153e4e;
+.card {
+  border: 1px solid #123746;
   border-radius: 22px;
 
   background:
     linear-gradient(
       145deg,
-      rgba(8, 29, 40, 0.98),
-      rgba(3, 17, 26, 0.98)
+      rgba(5, 31, 41, 0.95),
+      rgba(3, 19, 27, 0.95)
     );
 
   box-shadow:
-    0 18px 45px rgba(0, 0, 0, 0.18);
+    0 15px 50px rgba(0, 0, 0, 0.2);
 
   overflow: hidden;
 }
 
-/* =========================================================
-   PANEL HEADER
-========================================================= */
+.overview-card {
+  padding: 25px;
+}
 
-.panel-heading {
-  width: 100%;
-
+.card-title {
   display: flex;
   align-items: center;
 
-  gap: 13px;
+  gap: 12px;
 
-  padding-bottom: 17px;
-
-  border-bottom: 1px solid #173b49;
+  font-weight: 800;
+  font-size: 17px;
 }
 
-.panel-icon {
-  width: 46px;
-  height: 46px;
+.card-title span {
+  width: 40px;
+  height: 40px;
 
   display: grid;
   place-items: center;
 
-  flex-shrink: 0;
+  border-radius: 12px;
 
+  background: #092733;
+}
+
+.card-subtitle {
+  color: #688692;
+  line-height: 1.5;
+  font-size: 13px;
+}
+
+/* STATS */
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+
+  margin: 25px 0;
+
+  border: 1px solid #173b49;
+  border-radius: 15px;
+
+  overflow: hidden;
+}
+
+.stat-grid > div {
+  padding: 18px;
+
+  border-right: 1px solid #173b49;
+}
+
+.stat-grid > div:last-child {
+  border-right: none;
+}
+
+.stat-grid span {
+  display: block;
+
+  color: #6d8b96;
+
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+
+.stat-grid strong {
+  display: block;
+
+  margin-top: 7px;
+
+  font-size: 22px;
+}
+
+/* BUTTON */
+
+.movement-button {
+  width: 100%;
+
+  padding: 16px;
+
+  border: 0;
   border-radius: 14px;
 
-  background: #072b3b;
+  background: #12313c;
+  color: #b8cbd0;
 
-  border: 1px solid #145269;
+  cursor: pointer;
 
-  font-size: 21px;
+  font-weight: 800;
 }
 
-.panel-heading > div:last-child {
+.movement-button.active {
+  background: linear-gradient(
+    90deg,
+    #13b6d2,
+    #0bd9a7
+  );
+
+  color: #00171c;
+}
+
+/* TRAFFIC */
+
+.traffic-card {
+  padding: 25px;
+}
+
+.road-control {
+  margin-top: 17px;
+
+  padding: 15px;
+
+  border: 1px solid #163c4a;
+  border-radius: 14px;
+
+  background: rgba(2, 19, 27, 0.7);
+}
+
+.road-control-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.road-control-top strong {
+  font-size: 15px;
+}
+
+.road-control-top span {
+  display: block;
+
+  margin-top: 4px;
+
+  color: #63828e;
+
+  font-size: 11px;
+}
+
+.percentage {
+  color: #00e7ad;
+}
+
+.road-control input {
+  width: 100%;
+  margin: 14px 0;
+
+  accent-color: #0bd9a7;
+}
+
+.road-control-bottom {
+  display: flex;
+  justify-content: space-between;
+
+  color: #7895a0;
+
+  font-size: 11px;
+}
+
+.route-badge {
+  color: #00f0b5;
+}
+
+/* MAP */
+
+.map-section {
   min-width: 0;
+
+  border: 1px solid #123746;
+  border-radius: 24px;
+
+  background: #03141c;
+
+  overflow: hidden;
 }
 
-.panel-heading h2 {
+.map-header {
+  min-height: 105px;
+
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  padding: 22px 28px;
+
+  border-bottom: 1px solid #123746;
+}
+
+.map-header h2 {
   margin: 0;
+
+  font-size: 25px;
+}
+
+.map-header p {
+  margin: 7px 0 0;
+
+  color: #64818c;
+  font-size: 13px;
+}
+
+.route-pill {
+  padding: 13px 20px;
+
+  border: 1px solid #12616a;
+  border-radius: 14px;
+
+  background: #05252d;
+
+  text-align: right;
+}
+
+.route-pill span {
+  display: block;
+
+  color: #62828c;
+
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.route-pill strong {
+  display: block;
+
+  margin-top: 5px;
+
+  color: #00e7ad;
+}
+
+/* SVG MAP */
+
+.map-wrapper {
+  width: 100%;
+}
+
+.city-map {
+  width: 100%;
+  height: auto;
+
+  display: block;
+}
+
+.district-label {
+  fill: #123541;
 
   font-size: 17px;
   font-weight: 800;
 
-  color: #f4f8fb;
+  letter-spacing: 5px;
 }
 
-.panel-heading p {
-  margin: 5px 0 0;
+.road-id {
+  fill: #0ed9f4;
+
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.road-congestion {
+  fill: #e7f7fa;
 
   font-size: 11px;
-
-  color: #66889a;
+  font-weight: 700;
 }
 
-/* =========================================================
-   JOURNEY STATUS
-========================================================= */
+.junction-number {
+  fill: white;
 
-.current-location-box {
-  width: 100%;
-
-  text-align: center;
-
-  padding: 24px 10px 20px;
+  font-size: 20px;
+  font-weight: 900;
 }
 
-.current-location-box > span {
-  display: block;
+.junction-label {
+  fill: #6d8b96;
 
-  margin-bottom: 10px;
+  font-size: 11px;
+  font-weight: 800;
+
+  letter-spacing: 1px;
+}
+
+.green-label {
+  fill: #00ffb3;
+
+  font-size: 10px;
+  font-weight: 900;
+
+  letter-spacing: 1px;
+}
+
+.ambulance-label {
+  fill: #00ffb3;
+
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.route-title {
+  fill: #6b8995;
 
   font-size: 10px;
   font-weight: 800;
 
   letter-spacing: 2px;
-
-  color: #7191a3;
 }
 
-.current-location-box > strong {
-  display: block;
-
-  font-size: 25px;
-
-  color: #ffffff;
-}
-
-.journey-state {
-  width: fit-content;
-  max-width: 100%;
-
-  margin: 12px auto 0;
-
-  padding: 9px 16px;
-
-  border-radius: 999px;
-
-  background: #082e36;
-
-  border: 1px solid #11685f;
-
-  color: #54e7c0;
-
-  font-size: 11px;
-  font-weight: 800;
-
-  white-space: normal;
-}
-
-.journey-state.completed {
-  color: #54e7c0;
-}
-
-.journey-state.enroute {
-  color: #4de7bd;
-}
-
-/* =========================================================
-   JOURNEY GRID
-========================================================= */
-
-.journey-grid {
-  width: 100%;
-
-  display: grid;
-
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-
-  border: 1px solid #153e4d;
-  border-radius: 14px;
-
-  overflow: hidden;
-}
-
-.journey-grid > div {
-  min-width: 0;
-
-  padding: 17px 12px;
-
-  border-right: 1px solid #153e4d;
-  border-bottom: 1px solid #153e4d;
-}
-
-.journey-grid > div:nth-child(2n) {
-  border-right: 0;
-}
-
-.journey-grid > div:nth-child(3),
-.journey-grid > div:nth-child(4) {
-  border-bottom: 0;
-}
-
-.journey-grid span {
-  display: block;
-
-  margin-bottom: 8px;
-
-  font-size: 9px;
-  font-weight: 800;
-
-  letter-spacing: 1.4px;
-
-  color: #6c899b;
-}
-
-.journey-grid strong {
-  display: block;
-
-  min-width: 0;
+.route-value {
+  fill: white;
 
   font-size: 15px;
-
-  color: #f4f8fb;
-
-  overflow-wrap: anywhere;
+  font-weight: 900;
 }
 
-/* =========================================================
-   PROGRESS
-========================================================= */
-
-.progress-section {
-  margin-top: 22px;
-}
-
-.progress-header {
-  display: flex;
-  justify-content: space-between;
-
-  margin-bottom: 10px;
-}
-
-.progress-header span {
-  font-size: 9px;
-  font-weight: 800;
-
-  letter-spacing: 1.5px;
-
-  color: #7190a2;
-}
-
-.progress-header strong {
-  font-size: 10px;
-
-  color: #1ee0bc;
-}
-
-.progress-track {
-  width: 100%;
-  height: 9px;
-
-  overflow: hidden;
-
-  border-radius: 999px;
-
-  background: #0a2836;
-}
-
-.progress-fill {
-  height: 100%;
-
-  border-radius: inherit;
-
-  background: linear-gradient(
-    90deg,
-    #1db5df,
-    #1de0a8
-  );
-
-  transition: width 0.25s linear;
-}
-
-/* =========================================================
-   BUTTONS
-========================================================= */
-
-.primary-button,
-.secondary-button {
-  width: 100%;
-
-  margin-top: 16px;
-
-  min-height: 52px;
-
-  border-radius: 13px;
-
-  border: 1px solid transparent;
-
-  font-size: 13px;
-  font-weight: 800;
-
-  transition:
-    transform 0.2s ease,
-    opacity 0.2s ease;
-}
-
-.primary-button {
-  background: linear-gradient(
-    135deg,
-    #22bde2,
-    #19d7a9
-  );
-
-  color: #021014;
-}
-
-.secondary-button {
-  background: #091d2a;
-
-  border-color: #1c4252;
-
-  color: #d6e6ed;
-}
-
-.primary-button:hover:not(:disabled),
-.secondary-button:hover {
-  transform: translateY(-2px);
-}
-
-.primary-button:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
-
-/* =========================================================
-   TRAFFIC
-========================================================= */
-
-.traffic-list {
-  display: flex;
-  flex-direction: column;
-
-  gap: 12px;
-
-  margin-top: 18px;
-}
-
-.traffic-item {
-  width: 100%;
-  min-width: 0;
-
-  padding: 16px;
-
-  border-radius: 15px;
-
-  border: 1px solid #173f4e;
-
-  background: rgba(5, 25, 35, 0.8);
-}
-
-.traffic-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-
-  gap: 10px;
-}
-
-.traffic-top > div {
-  min-width: 0;
-}
-
-.traffic-top strong {
-  display: block;
-
-  font-size: 13px;
-}
-
-.traffic-top span {
-  display: block;
-
-  margin-top: 4px;
-
-  font-size: 10px;
-
-  color: #6c8999;
-}
-
-.traffic-top b {
-  flex-shrink: 0;
-
-  padding: 5px 9px;
-
-  border-radius: 7px;
-
-  font-size: 9px;
-}
-
-.low {
-  color: #4de7bd;
-  background: rgba(30, 224, 168, 0.08);
-}
-
-.medium {
-  color: #f6bd4d;
-  background: rgba(246, 189, 77, 0.08);
-}
-
-.high {
-  color: #ff6472;
-  background: rgba(255, 70, 90, 0.08);
-}
-
-.traffic-item input {
-  width: 100%;
-
-  margin-top: 15px;
-
-  accent-color: #19d7a9;
-}
-
-.traffic-bottom {
-  display: flex;
-  justify-content: space-between;
-
-  gap: 10px;
-
-  margin-top: 7px;
-
-  font-size: 9px;
-
-  color: #678698;
-}
-
-/* =========================================================
-   RIGHT COLUMN
-========================================================= */
-
-.right-column .panel {
-  width: 100%;
-}
-
-/* =========================================================
-   SIGNAL LIST
-========================================================= */
-
-.signal-list {
-  display: flex;
-  flex-direction: column;
-
-  gap: 10px;
-
-  margin-top: 16px;
-}
-
-.signal-item {
-  width: 100%;
-  min-width: 0;
-
+.map-bottom-info {
   display: grid;
 
-  grid-template-columns: 30px minmax(0, 1fr) auto;
+  grid-template-columns: repeat(4, 1fr);
 
-  align-items: center;
-
-  gap: 10px;
-
-  padding: 13px;
-
-  border: 1px solid #153c4b;
-  border-radius: 13px;
-
-  background: #061923;
+  border-top: 1px solid #123746;
 }
 
-.signal-light {
-  width: 10px;
-  height: 32px;
-
-  display: flex;
-  justify-content: center;
-
-  border-radius: 8px;
-
-  background: #020a11;
-}
-
-.signal-light span {
-  width: 8px;
-  height: 8px;
-
-  margin-top: 5px;
-
-  border-radius: 50%;
-
-  background: #20333c;
-}
-
-.signal-light .green-light {
-  background: #20df9e;
-
-  box-shadow:
-    0 0 8px #20df9e;
-}
-
-.signal-item > div:nth-child(2) {
-  min-width: 0;
-}
-
-.signal-item strong {
-  display: block;
-  font-size: 12px;
-}
-
-.signal-item small {
-  display: block;
-
-  margin-top: 4px;
-
-  font-size: 9px;
-
-  color: #66889a;
-}
-
-.signal-item b {
-  font-size: 9px;
-  color: #6b8595;
-}
-
-.signal-active b {
-  color: #34e4b2;
-}
-
-.signal-message {
-  margin-top: 14px;
-
-  padding: 13px;
-
-  border-radius: 12px;
-
-  text-align: center;
-
-  font-size: 10px;
-  font-weight: 700;
-
-  color: #4ce3ba;
-
-  background: rgba(24, 181, 142, 0.08);
-}
-
-/* =========================================================
-   ROUTE AGENT
-   THIS FIXES YOUR SCREENSHOT
-========================================================= */
-
-.route-panel {
-  width: 100%;
-  min-width: 0;
-
-  overflow: hidden;
-}
-
-.route-result {
-  width: 100%;
-  min-width: 0;
-
-  padding: 22px 0;
-
-  text-align: center;
-}
-
-.route-result > span {
-  display: block;
-
-  margin-bottom: 11px;
-
-  font-size: 9px;
-  font-weight: 800;
-
-  letter-spacing: 1.5px;
-
-  color: #6e8c9e;
-}
-
-.route-result > strong {
-  display: block;
-
-  width: 100%;
-
-  font-size: clamp(13px, 1.2vw, 17px);
-  line-height: 1.5;
-
-  color: #ffffff;
-
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-/* Route stats */
-
-.route-stats {
-  width: 100%;
-
-  display: grid;
-
-  grid-template-columns:
-    minmax(0, 1fr)
-    minmax(0, 1fr);
-
-  gap: 10px;
-}
-
-.route-stats > div {
-  min-width: 0;
-
-  padding: 16px 10px;
-
-  border: 1px solid #164354;
-
-  border-radius: 12px;
-
-  text-align: center;
-
-  background: rgba(4, 24, 34, 0.8);
-}
-
-.route-stats span {
-  display: block;
-
-  font-size: 8px;
-  font-weight: 800;
-
-  letter-spacing: 0.8px;
-
-  color: #648396;
-}
-
-.route-stats strong {
-  display: block;
-
-  margin-top: 8px;
-
-  font-size: 13px;
-
-  color: #f3f8fa;
-
-  overflow-wrap: anywhere;
-}
-
-/* Traffic status */
-
-.traffic-status-card {
-  width: 100%;
-
-  margin-top: 10px;
-
+.map-bottom-info > div {
   padding: 18px;
 
-  text-align: center;
-
-  border-radius: 13px;
-
-  border: 1px solid #11695e;
-
-  background: rgba(7, 49, 48, 0.5);
+  border-right: 1px solid #123746;
 }
 
-.traffic-status-card span {
+.map-bottom-info > div:last-child {
+  border-right: none;
+}
+
+.info-title {
   display: block;
 
-  font-size: 8px;
-  font-weight: 800;
+  margin-bottom: 7px;
 
-  letter-spacing: 1px;
+  color: #607d88;
 
-  color: #638797;
-}
-
-.traffic-status-card strong {
-  display: block;
-
-  margin-top: 8px;
-
-  font-size: 14px;
-
-  color: #1de0b4;
-
-  overflow-wrap: anywhere;
-}
-
-/* =========================================================
-   CURRENT ROAD
-========================================================= */
-
-.current-road-panel {
-  width: 100%;
-  min-width: 0;
-
-  overflow: hidden;
-}
-
-.current-road-info {
-  width: 100%;
-
-  display: flex;
-  flex-direction: column;
-
-  gap: 14px;
-
-  margin-top: 18px;
-}
-
-.current-road-row {
-  width: 100%;
-  min-width: 0;
-
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-
-  gap: 15px;
-
-  padding: 13px 15px;
-
-  border-radius: 11px;
-
-  background: #061b27;
-
-  border: 1px solid #153c4b;
-}
-
-.current-road-row span {
   font-size: 10px;
-  color: #6c899b;
+  letter-spacing: 1.5px;
 }
 
-.current-road-row strong {
-  max-width: 65%;
-
-  text-align: right;
-
-  font-size: 13px;
-
-  color: #f3f8fa;
-
-  overflow-wrap: anywhere;
+.map-bottom-info strong {
+  color: white;
 }
 
-/* =========================================================
-   JOURNEY LOG
-========================================================= */
+/* SIGNAL */
 
-.journey-log {
-  display: flex;
-  flex-direction: column;
-
-  gap: 11px;
-
-  margin-top: 17px;
+.signal-card {
+  padding: 24px;
 }
 
-.log-entry {
-  width: 100%;
-  min-width: 0;
-
+.signal-row {
   display: grid;
 
-  grid-template-columns: 38px minmax(0, 1fr);
+  grid-template-columns: 45px 1fr auto;
+
+  align-items: center;
 
   gap: 10px;
 
-  padding: 12px;
+  margin-top: 12px;
 
-  border-radius: 11px;
+  padding: 14px;
 
-  background: #061923;
-
-  border: 1px solid #153746;
+  border: 1px solid #173c49;
+  border-radius: 14px;
 }
 
-.log-entry > span {
-  color: #31dfb2;
+.signal-row.priority {
+  border-color: #00a982;
 
-  font-size: 10px;
-  font-weight: 800;
+  background: rgba(0, 231, 173, 0.07);
+
+  box-shadow: 0 0 25px rgba(0, 231, 173, 0.08);
 }
 
-.log-entry strong {
-  display: block;
-
-  font-size: 11px;
-
-  overflow-wrap: anywhere;
-}
-
-.log-entry small {
-  display: block;
-
-  margin-top: 4px;
-
-  font-size: 9px;
-
-  color: #648496;
-
-  overflow-wrap: anywhere;
-}
-
-.log-entry.success {
-  border-color: #125c50;
-}
-
-/* =========================================================
-   FOOTER
-========================================================= */
-
-.footer {
-  width: 100%;
-
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-
-  gap: 25px;
-
-  padding: 25px;
-
-  color: #527182;
-
-  font-size: 10px;
-
-  border-top: 1px solid #123542;
-}
-
-/* =========================================================
-   LOADING / ERROR
-========================================================= */
-
-.loading-screen,
-.error-screen {
-  min-height: 100vh;
+.signal-icon {
+  width: 32px;
+  height: 45px;
 
   display: grid;
   place-items: center;
 
-  padding: 20px;
-
-  background: #020b12;
-}
-
-.loading-card,
-.error-card {
-  width: min(420px, 100%);
-
-  padding: 35px;
-
-  text-align: center;
-
-  border-radius: 22px;
-
-  border: 1px solid #154254;
-
-  background: #061a25;
-}
-
-.loading-icon,
-.error-icon {
-  font-size: 40px;
-}
-
-.loading-card h2,
-.error-card h2 {
-  margin: 15px 0 8px;
-}
-
-.loading-card p,
-.error-card p {
-  color: #6b899b;
-  font-size: 13px;
-}
-
-.loader {
-  width: 100%;
-  height: 5px;
-
-  margin-top: 20px;
-
   border-radius: 10px;
 
-  background: linear-gradient(
-    90deg,
-    #20bfe1,
-    #1de0ae
-  );
-
-  animation: loading 1.2s infinite ease-in-out;
+  background: #071a22;
 }
 
-@keyframes loading {
-  0% {
-    transform: scaleX(0.2);
-    transform-origin: left;
-  }
+.signal-icon span {
+  width: 9px;
+  height: 9px;
 
-  50% {
-    transform: scaleX(1);
-  }
+  border-radius: 50%;
 
-  100% {
-    transform: scaleX(0.2);
-    transform-origin: right;
-  }
+  background: #243b44;
 }
 
-/* =========================================================
-   RESPONSIVE
-========================================================= */
+.signal-icon span.green-light {
+  background: #00ffb3;
 
-@media (max-width: 1200px) {
-  .dashboard {
+  box-shadow: 0 0 15px #00ffb3;
+}
+
+.signal-row strong {
+  display: block;
+}
+
+.signal-row small {
+  display: block;
+
+  margin-top: 4px;
+
+  color: #64828e;
+}
+
+.signal-row b {
+  color: #00e7ad;
+
+  font-size: 10px;
+}
+
+/* ROUTE AGENT */
+
+.route-agent {
+  padding: 25px;
+}
+
+.agent-icon {
+  width: 48px;
+  height: 48px;
+
+  display: grid;
+  place-items: center;
+
+  border-radius: 14px;
+
+  background: #082935;
+
+  font-size: 22px;
+}
+
+.route-agent h3 {
+  margin: 18px 0 5px;
+}
+
+.route-agent p {
+  margin: 0;
+
+  color: #66848f;
+}
+
+.divider {
+  height: 1px;
+
+  margin: 22px 0;
+
+  background: #163d49;
+}
+
+.route-agent > span {
+  color: #678691;
+
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.route-agent > strong {
+  display: block;
+
+  margin-top: 9px;
+
+  font-size: 18px;
+}
+
+.agent-info {
+  display: flex;
+  justify-content: space-between;
+
+  margin-top: 20px;
+  padding-top: 16px;
+
+  border-top: 1px solid #153744;
+}
+
+.agent-info span {
+  color: #63818c;
+
+  font-size: 10px;
+}
+
+.agent-info b {
+  color: #00e7ad;
+}
+
+/* RESPONSIVE */
+
+@media (max-width: 1400px) {
+  .layout {
     grid-template-columns:
-      minmax(250px, 290px)
-      minmax(450px, 1fr)
-      minmax(250px, 290px);
-
-    padding: 18px;
-  }
-
-  .topbar {
-    padding: 14px 20px;
-  }
-}
-
-@media (max-width: 1000px) {
-  .dashboard {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .center-column {
-    grid-column: 1 / -1;
-    grid-row: 1;
-  }
-
-  .left-column {
-    grid-column: 1;
-  }
-
-  .right-column {
-    grid-column: 2;
+      300px
+      minmax(600px, 1fr)
+      300px;
   }
 
   .brand h1 {
-    font-size: 20px;
+    font-size: 28px;
+  }
+}
+
+@media (max-width: 1100px) {
+  .layout {
+    grid-template-columns: 1fr;
   }
 
-  .system-status {
-    min-width: 190px;
+  .sidebar,
+  .right-sidebar {
+    display: grid;
+
+    grid-template-columns: 1fr 1fr;
   }
 }
 
 @media (max-width: 700px) {
-  .topbar {
-    position: relative;
+  .header {
+    height: auto;
 
     flex-direction: column;
-    align-items: stretch;
+    align-items: flex-start;
 
-    gap: 14px;
+    gap: 15px;
   }
 
-  .brand h1 {
-    white-space: normal;
-    font-size: 19px;
-  }
-
-  .system-status {
+  .header-status {
     width: 100%;
   }
 
-  .dashboard {
-    display: flex;
+  .sidebar,
+  .right-sidebar {
+    grid-template-columns: 1fr;
+  }
+
+  .map-header {
     flex-direction: column;
+    align-items: flex-start;
 
-    padding: 12px;
+    gap: 15px;
   }
 
-  .center-column,
-  .left-column,
-  .right-column {
-    width: 100%;
+  .map-bottom-info {
+    grid-template-columns: 1fr 1fr;
   }
-
-  .panel {
-    padding: 17px;
-    border-radius: 17px;
-  }
-
-  .journey-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .journey-grid > div,
-  .journey-grid > div:nth-child(2n) {
-    border-right: 0;
-    border-bottom: 1px solid #153e4d;
-  }
-
-  .journey-grid > div:last-child {
-    border-bottom: 0;
-  }
-
-  .route-stats {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* =========================================================
-   EXTRA OVERFLOW PROTECTION
-========================================================= */
-
-.panel *,
-.left-column *,
-.right-column * {
-  max-width: 100%;
-}
-
-.route-panel strong,
-.current-road-panel strong,
-.route-result strong,
-.traffic-status-card strong {
-  white-space: normal !important;
-  overflow: visible;
-  text-overflow: clip;
-}
-
-img,
-svg {
-  max-width: 100%;
 }
